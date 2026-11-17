@@ -1,0 +1,76 @@
+name: Release
+
+# A tag v<VERSION> builds the release archives and opens a draft release with them; the owner writes the notes (say
+# when glov-broker changed, so a Windows upgrade needs `glov host install-broker` elevated) and publishes it. `gh release download` only sees published releases.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mac:
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # git describe labels the build with the tag
+          persist-credentials: false
+      - name: Tag matches VERSION
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          [ "$TAG" = "v$version" ] || { echo "tag $TAG does not match VERSION $version" >&2; exit 1; }
+      # Pinned: this job builds what the release ships, so a moved third-party tag must not change it.
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          install_args: go
+      - run: tools/package.sh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-arm64
+          path: .build/dist/*.tar.gz*
+          if-no-files-found: error
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0  # git describe labels the build with the tag
+          persist-credentials: false
+      # Pinned like the mac job's.
+      - uses: jdx/mise-action@d5574b52816a478f9d4e6529a3f6ff17a8a36785 # v5.2.8
+        with:
+          install_args: go
+      - run: tools/package-windows.ps1
+        shell: pwsh
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-x64
+          path: .build/dist/*.zip*
+          if-no-files-found: error
+
+  publish:
+    needs: [mac, windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --verify-tag --generate-notes --title "glov $TAG" dist/*

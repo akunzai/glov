@@ -1,0 +1,113 @@
+{
+  "about": "Placeholder substitution in one decrypted request head (docs/networking.md \"Secrets\"), read by the tests of both editions: Tests/GlovDaemonTests/SecretSubstitutionTests.swift and windows/internal/egress/substitution_test.go. Each case's head goes to host:port from VM vm with the secrets granted. A case expects a plan (the secrets it names, in order of first use, and the path without its query) or a refusal (status and egress.log reason; the message differs between editions, which name the host they run on). With values, the plan is applied and gives output, or applyRefusal.",
+  "definitions": [
+    {"name": "gh", "hosts": ["api.example.com"]},
+    {"name": "gh.user", "hosts": ["api.example.com"]},
+    {"name": "npm", "hosts": ["registry.example.org"]}
+  ],
+  "cases": [
+    {
+      "name": "header values get their values, Basic credentials included, the query is left alone and the connection closes",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": ["gh", "gh.user", "npm"],
+      "head": "POST /repo.git/git-upload-pack?x=glov-secret:gh HTTP/1.1\r\nHost: API.example.com\r\nAuthorization: Basic eC1hY2Nlc3MtdG9rZW46Z2xvdi1zZWNyZXQ6Z2g=\r\nX-Token: glov-secret:gh.user glov-secret:gh\r\nConnection: keep-alive\r\nProxy-Authorization: x\r\n\r\n",
+      "plan": {"secrets": ["gh", "gh.user"], "path": "/repo.git/git-upload-pack"},
+      "values": {"gh": "T1", "gh.user": "U2"},
+      "output": "POST /repo.git/git-upload-pack?x=glov-secret:gh HTTP/1.1\r\nHost: API.example.com\r\nAuthorization: Basic eC1hY2Nlc3MtdG9rZW46VDE=\r\nX-Token: U2 T1\r\nConnection: close\r\n\r\n"
+    },
+    {
+      "name": "a longer name is never rewritten by a shorter one",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": ["gh", "gh.user"],
+      "head": "GET / HTTP/1.1\r\nHost: api.example.com\r\nA: glov-secret:gh.user;glov-secret:gh\r\n\r\n",
+      "plan": {"secrets": ["gh.user", "gh"], "path": "/"},
+      "values": {"gh": "short", "gh.user": "long"},
+      "output": "GET / HTTP/1.1\r\nHost: api.example.com\r\nA: long;short\r\nConnection: close\r\n\r\n"
+    },
+    {
+      "name": "a secret not granted to the VM",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": [],
+      "head": "GET / HTTP/1.1\r\nHost: api.example.com\r\nA: glov-secret:gh\r\n\r\n",
+      "refusal": {"status": 403, "reason": "secret gh not granted"}
+    },
+    {
+      "name": "a secret nobody defined",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": ["gh", "npm"],
+      "head": "GET / HTTP/1.1\r\nHost: api.example.com\r\nA: glov-secret:nope\r\n\r\n",
+      "refusal": {"status": 403, "reason": "secret nope undefined"}
+    },
+    {
+      "name": "a secret bound to another host",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": ["gh", "npm"],
+      "head": "GET / HTTP/1.1\r\nHost: api.example.com\r\nA: glov-secret:npm\r\n\r\n",
+      "refusal": {"status": 403, "reason": "secret npm not bound to host"}
+    },
+    {
+      "name": "a secret bound to the host on another port",
+      "host": "api.example.com", "port": 8443, "vm": "box", "granted": ["gh"],
+      "head": "GET / HTTP/1.1\r\nHost: api.example.com:8443\r\nA: glov-secret:gh\r\n\r\n",
+      "refusal": {"status": 403, "reason": "secret gh not bound to host"}
+    },
+    {
+      "name": "a Host header naming another site",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": ["gh", "npm"],
+      "head": "GET / HTTP/1.1\r\nHost: evil.example.net\r\nA: glov-secret:gh\r\n\r\n",
+      "refusal": {"status": 403, "reason": "Host header mismatch"}
+    },
+    {
+      "name": "no Host header",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": ["gh", "npm"],
+      "head": "GET / HTTP/1.1\r\nA: glov-secret:gh\r\n\r\n",
+      "refusal": {"status": 400, "reason": "malformed request"}
+    },
+    {
+      "name": "two Host headers",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": ["gh"],
+      "head": "GET / HTTP/1.1\r\nHost: api.example.com\r\nHost: api.example.com\r\n\r\n",
+      "refusal": {"status": 400, "reason": "malformed request"}
+    },
+    {
+      "name": "an absolute-form request inside TLS",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": ["gh", "npm"],
+      "head": "GET http://api.example.com/ HTTP/1.1\r\nHost: api.example.com\r\n\r\n",
+      "refusal": {"status": 400, "reason": "malformed request"}
+    },
+    {
+      "name": "a header with a space before its colon",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": ["gh"],
+      "head": "GET / HTTP/1.1\r\nHost: api.example.com\r\nX-Token : glov-secret:gh\r\n\r\n",
+      "refusal": {"status": 400, "reason": "malformed request"}
+    },
+    {
+      "name": "a bare LF or CR inside the head, which an upstream could read as a second Host header",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": ["gh"],
+      "head": "GET / HTTP/1.1\r\nHost: api.example.com\r\nX-A: a\nHost: other.example.com\r\nAuthorization: Bearer glov-secret:gh\r\n\r\n",
+      "refusal": {"status": 400, "reason": "malformed request"}
+    },
+    {
+      "name": "a NUL inside a header value",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": ["gh"],
+      "head": "GET / HTTP/1.1\r\nHost: api.example.com\r\nX-A: a\u0000b\r\nAuthorization: Bearer glov-secret:gh\r\n\r\n",
+      "refusal": {"status": 400, "reason": "malformed request"}
+    },
+    {
+      "name": "a value with a line break is never sent",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": ["gh"],
+      "head": "GET / HTTP/1.1\r\nHost: api.example.com\r\nA: glov-secret:gh\r\n\r\n",
+      "plan": {"secrets": ["gh"], "path": "/"},
+      "values": {"gh": "a\r\nInjected: 1"},
+      "applyRefusal": {"status": 502, "reason": "secret gh unusable"}
+    },
+    {
+      "name": "a request naming no placeholder goes through as it came, closing the connection",
+      "host": "api.example.com", "port": 443, "vm": "box", "granted": [],
+      "head": "GET /x?y=1 HTTP/1.1\r\nHost: api.example.com\r\nAccept: */*\r\nUpgrade: h2c\r\n\r\n",
+      "plan": {"secrets": [], "path": "/x"},
+      "values": {},
+      "output": "GET /x?y=1 HTTP/1.1\r\nHost: api.example.com\r\nAccept: */*\r\nConnection: close\r\n\r\n"
+    }
+  ],
+  "plainHTTP": [
+    {"head": "GET http://api.example.com/ HTTP/1.1\r\nHost: api.example.com\r\nAuthorization: Basic dTpnbG92LXNlY3JldDpnaA==\r\n\r\n", "mentionsPlaceholder": true},
+    {"head": "GET http://api.example.com/?q=glov-secret:gh HTTP/1.1\r\nHost: api.example.com\r\n\r\n", "mentionsPlaceholder": true},
+    {"head": "GET http://api.example.com/ HTTP/1.1\r\nHost: api.example.com\r\nAuthorization: Basic dTpw\r\n\r\n", "mentionsPlaceholder": false}
+  ]
+}

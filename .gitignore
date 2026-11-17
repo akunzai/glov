@@ -1,0 +1,5 @@
+.build/
+.swiftpm/
+guest/*.exe
+guest/glov-agent
+windows/*.exe

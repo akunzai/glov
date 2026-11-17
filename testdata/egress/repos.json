@@ -1,0 +1,668 @@
+{
+  "about": "Which repository a signed-in request to a git secret's host reaches, and whether a VM's repositories allow it (docs/networking.md \"Repositories\"), read by the tests of both editions: windows/internal/egress/repos_test.go and Tests/GlovCoreTests/RepoAccessTests.swift. patterns normalize to pattern; invalidPatterns name no repository. A target is repo:<owner/repo>, none, graphQL or unknown (refused; the reason is not compared). Each refusal case gives a target's refusal against allowed, null when it passes. graphQL requests go to host, nodes resolving each node ID (null: a person), with only allowed repositories allowed; a refused request gives its reason when it is compared, else null. nodeIDs are the IDs a request has resolved first, sorted.",
+  "patterns": [
+    {
+      "text": "https://GitHub.com/Owner/App.git/",
+      "pattern": "github.com/owner/app"
+    },
+    {
+      "text": "gitlab.example.com/team/sub/proj",
+      "pattern": "gitlab.example.com/team/sub/proj"
+    },
+    {
+      "text": "gitlab.example.com/team/*",
+      "pattern": "gitlab.example.com/team/*"
+    }
+  ],
+  "invalidPatterns": [
+    "github.com/owner",
+    "github.com",
+    "*.github.com/a/b",
+    "github.com/*/b",
+    "github.com/a/../b",
+    "github.com/a b/c",
+    "github.com//b"
+  ],
+  "matches": [
+    {
+      "pattern": "gitlab.example.com/team/*",
+      "host": "GITLAB.example.com",
+      "repo": "team/sub/proj",
+      "matches": true
+    },
+    {
+      "pattern": "gitlab.example.com/team/*",
+      "host": "gitlab.example.com",
+      "repo": "team/x",
+      "matches": true
+    },
+    {
+      "pattern": "gitlab.example.com/team/*",
+      "host": "gitlab.example.com",
+      "repo": "teammate/x",
+      "matches": false
+    },
+    {
+      "pattern": "gitlab.example.com/team/*",
+      "host": "other.example.com",
+      "repo": "team/x",
+      "matches": false
+    }
+  ],
+  "repoHosts": [
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "repoHost": "github.com"
+    },
+    {
+      "forge": "github",
+      "host": "uploads.github.com",
+      "repoHost": "github.com"
+    },
+    {
+      "forge": "github",
+      "host": "ghe.example.com",
+      "repoHost": "ghe.example.com"
+    },
+    {
+      "forge": "gitlab",
+      "host": "api.github.com",
+      "repoHost": "api.github.com"
+    }
+  ],
+  "targets": [
+    {
+      "forge": "github",
+      "host": "github.com",
+      "path": "/owner/app.git/info/refs",
+      "target": "repo:owner/app"
+    },
+    {
+      "forge": "github",
+      "host": "github.com",
+      "path": "/Owner/App/git-receive-pack",
+      "target": "repo:owner/app"
+    },
+    {
+      "forge": "github",
+      "host": "github.com",
+      "path": "/owner/app.git/info/lfs/objects/batch",
+      "target": "repo:owner/app"
+    },
+    {
+      "forge": "github",
+      "host": "github.com",
+      "path": "/login",
+      "target": "none"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/repos/owner/app/pulls",
+      "target": "repo:owner/app"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/user",
+      "target": "none"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/users/someone",
+      "target": "none"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/graphql",
+      "target": "graphQL"
+    },
+    {
+      "forge": "github",
+      "host": "uploads.github.com",
+      "path": "/repos/owner/app/releases/1/assets",
+      "target": "repo:owner/app"
+    },
+    {
+      "forge": "github",
+      "host": "uploads.github.com",
+      "path": "/graphql",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "ghe.example.com",
+      "path": "/api/v3/repos/team/tool/issues",
+      "target": "repo:team/tool"
+    },
+    {
+      "forge": "github",
+      "host": "ghe.example.com",
+      "path": "/api/graphql",
+      "target": "graphQL"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/search/code",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/repositories/123",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/issues",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/notifications",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/user/repos",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/orgs/o/repos",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/networks/o/r/events",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/repos/owner%2Fx/app",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/repos/owner/app/../../other/x",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/repos/owner/./app",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "api.github.com",
+      "path": "/repos//owner/app",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "github.com",
+      "path": "/owner/app/../../other/x.git/info/refs",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "github.com",
+      "path": "/owner/%2e%2e/x/info/refs",
+      "target": "unknown"
+    },
+    {
+      "forge": "github",
+      "host": "github.com",
+      "path": "/owner%2Fapp/x.git/info/refs",
+      "target": "unknown"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/team/sub/proj.git/info/refs",
+      "target": "repo:team/sub/proj"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/team/sub/proj/info/refs",
+      "target": "repo:team/sub/proj"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/team/proj.git/git-upload-pack",
+      "target": "repo:team/proj"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/team/sub/proj/-/merge_requests/1",
+      "target": "repo:team/sub/proj"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/api/v4/projects/team%2Fsub%2Fproj/merge_requests",
+      "target": "repo:team/sub/proj"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/api/v4/user",
+      "target": "none"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/api/v4/version",
+      "target": "none"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/explore",
+      "target": "none"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/api/v4/projects/42/merge_requests",
+      "target": "unknown"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/api/v4/search",
+      "target": "unknown"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/api/v4/groups/team/search",
+      "target": "unknown"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/api/graphql",
+      "target": "unknown"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/api/v4/issues",
+      "target": "unknown"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/api/v4/merge_requests",
+      "target": "unknown"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/api/v4/projects",
+      "target": "unknown"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/api/v4/groups/team/issues",
+      "target": "unknown"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/api/v4/projects/team%2F..%2Fother%2Fp",
+      "target": "unknown"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/team/../other/proj.git/info/refs",
+      "target": "unknown"
+    },
+    {
+      "forge": "gitlab",
+      "host": "gitlab.example.com",
+      "path": "/team/sub/%2e%2e/proj/info/refs",
+      "target": "unknown"
+    }
+  ],
+  "refusals": {
+    "allowed": [
+      "github.com/Owner/App",
+      "gitlab.example.com/team/*"
+    ],
+    "cases": [
+      {
+        "target": "repo:owner/app",
+        "method": "POST",
+        "host": "github.com",
+        "refusal": null
+      },
+      {
+        "target": "repo:team/sub/x",
+        "method": "POST",
+        "host": "gitlab.example.com",
+        "refusal": null
+      },
+      {
+        "target": "repo:owner/other",
+        "method": "GET",
+        "host": "github.com",
+        "refusal": "repository github.com/owner/other is not allowed"
+      },
+      {
+        "target": "none",
+        "method": "GET",
+        "host": "github.com",
+        "refusal": null
+      },
+      {
+        "target": "none",
+        "method": "post",
+        "host": "github.com",
+        "refusal": "a POST that names no allowed repository"
+      },
+      {
+        "target": "graphQL",
+        "method": "GET",
+        "host": "github.com",
+        "refusal": null
+      }
+    ]
+  },
+  "graphQL": {
+    "host": "github.com",
+    "allowed": [
+      "owner/app"
+    ],
+    "nodes": {
+      "R_app": "owner/app",
+      "PR_app": "owner/app",
+      "R_other": "owner/other",
+      "U_me": null,
+      "L_app": "owner/app"
+    },
+    "allowedRequests": [
+      {
+        "query": "query RepositoryInfo($owner: String!, $name: String!) {\n  repository(owner: $owner, name: $name) { id name owner { login } defaultBranchRef { name } viewerPermission }\n}",
+        "variables": {
+          "owner": "Owner",
+          "name": "App"
+        }
+      },
+      {
+        "query": "mutation PullRequestCreate($input: CreatePullRequestInput!) { createPullRequest(input: $input) { pullRequest { id url } } }",
+        "variables": {
+          "input": {
+            "repositoryId": "R_app",
+            "assigneeIds": [
+              "U_me"
+            ],
+            "clientMutationId": "c1",
+            "title": "t"
+          }
+        }
+      },
+      {
+        "query": "fragment pr on PullRequest{number,title,state,url,headRefName,headRepositoryOwner{id,login,...on User{name}},isCrossRepository,isDraft,createdAt}\nquery PullRequestList($owner: String!, $repo: String!, $limit: Int!, $endCursor: String, $state: [PullRequestState!] = OPEN) {\n  repository(owner: $owner, name: $repo) {\n    pullRequests(states: $state, first: $limit, after: $endCursor, orderBy: {field: CREATED_AT, direction: DESC}) {\n      totalCount nodes { ...pr reviewRequests(first: 9) { nodes { requestedReviewer { ... on User { login } ... on Team { name } } } } }\n      pageInfo { hasNextPage endCursor } } } }",
+        "variables": {
+          "limit": 30,
+          "owner": "owner",
+          "repo": "app",
+          "state": [
+            "OPEN"
+          ]
+        }
+      },
+      {
+        "query": "# a comment with repository(owner: \"evil\", name: \"x\")\nquery { a: repository(owner: \"Owner\", name: \"App\") { ...Info } b: node(id: \"PR_app\") { ... on PullRequest { title author { login } } }\n  rateLimit { remaining } viewer { login }\n  d: repository(owner: \"owner\", name: \"app\") { parent { id name owner { login } defaultBranchRef { name } viewerPermission } }\n  c: repository(owner: \"owner\", name: \"app\") { pullRequest(number: 1) { projectItems(first: 9) { nodes { project { title } } } } } }\nfragment Info on Repository { id issues(first: 1) { nodes { title } } }",
+        "variables": {}
+      },
+      {
+        "query": "mutation M { addLabelsToLabelable(input: {labelableId: \"PR_app\", labelIds: [\"L_app\"]}) { clientMutationId } }",
+        "variables": {}
+      },
+      {
+        "query": "query { viewer { login } }",
+        "variables": {}
+      },
+      {
+        "query": "query Q($s: String = \"\"\"\n  block \\\"\"\" string\n\"\"\") { viewer { login } }",
+        "variables": {}
+      }
+    ],
+    "refusedRequests": [
+      {
+        "query": "mutation PullRequestCreate($input: CreatePullRequestInput!) { createPullRequest(input: $input) { pullRequest { id url } } }",
+        "variables": {
+          "input": {
+            "repositoryId": "R_other"
+          }
+        },
+        "refusal": "repository github.com/owner/other is not allowed"
+      },
+      {
+        "query": "query($o: String = \"owner\", $n: String = \"other\") { repository(owner: $o, name: $n) { id } }",
+        "variables": {},
+        "refusal": "repository github.com/owner/other is not allowed"
+      },
+      {
+        "query": "{ repository(owner: \"owner\", name: \"app\") { ...F } } fragment F on Repository { forks(first: 1) { nodes { name } } }",
+        "variables": {},
+        "refusal": "GraphQL field forks leads outside the allowed repository"
+      },
+      {
+        "query": "{ search(query: \"x\", type: REPOSITORY, first: 5) { nodes { ... on Repository { name } } } }",
+        "variables": {},
+        "refusal": "GraphQL field search is not one the proxy checks"
+      },
+      {
+        "query": "{ resource(url: \"https://github.com/other/x/issues/1\") { ... on Issue { title } } }",
+        "variables": {},
+        "refusal": null
+      },
+      {
+        "query": "{ viewer { repositories(first: 100) { nodes { name } } } }",
+        "variables": {},
+        "refusal": "GraphQL field repositories under a person reaches repositories the request does not name"
+      },
+      {
+        "query": "{ viewer { issues(first: 1) { nodes { title } } } }",
+        "variables": {},
+        "refusal": null
+      },
+      {
+        "query": "{ organization(login: \"o\") { repository(name: \"x\") { id } } }",
+        "variables": {},
+        "refusal": null
+      },
+      {
+        "query": "{ repository(owner: \"owner\", name: \"app\") { parent { object(expression: \"HEAD:x\") { id } } } }",
+        "variables": {},
+        "refusal": "GraphQL field object reads more of another repository than its name"
+      },
+      {
+        "query": "{ repository(owner: \"owner\", name: \"app\") { issue(number: 1) { author { ... on User { repositories(first: 1) { nodes { name } } } } } } }",
+        "variables": {},
+        "refusal": null
+      },
+      {
+        "query": "{ repository(owner: \"owner\", name: \"app\") { issue(number: 1) { trackedIssues(first: 1) { nodes { body } } } } }",
+        "variables": {},
+        "refusal": null
+      },
+      {
+        "query": "{ repository(owner: \"owner\", name: \"app\") { projectsV2(first: 1) { nodes { items(first: 9) { nodes { id } } } } } }",
+        "variables": {},
+        "refusal": null
+      },
+      {
+        "query": "{ repository(owner: \"owner\", name: \"app\") { parent { description defaultBranchRef { target { id } } } } }",
+        "variables": {},
+        "refusal": null
+      },
+      {
+        "query": "{ repository(owner: \"owner\", name: \"app\") { issue(number: 1) { parent { title body } } } }",
+        "variables": {},
+        "refusal": null
+      },
+      {
+        "query": "{ repository(owner: $o, name: $n) { id } }",
+        "variables": {
+          "o": 1
+        },
+        "refusal": "GraphQL repository(...) without an owner and name the proxy can read"
+      },
+      {
+        "query": "{ repository(owner: \"o\" name: \"x\" { id } }",
+        "variables": {},
+        "refusal": "a GraphQL query that does not parse"
+      },
+      {
+        "query": "{ node(id: \"X_unknown\") { id } }",
+        "variables": {},
+        "refusal": "node X_unknown is of no repository the proxy can tell"
+      },
+      {
+        "query": "{ node(id: \"U_me\") { ... on User { repositories(first: 1) { nodes { name } } } } }",
+        "variables": {},
+        "refusal": null
+      },
+      {
+        "query": "mutation($i: CreateRepositoryInput!) { createRepository(input: $i) { repository { url } } }",
+        "variables": {
+          "i": {
+            "ownerId": "U_me",
+            "name": "x"
+          },
+          "x": {
+            "repositoryId": "R_app"
+          }
+        },
+        "refusal": "GraphQL mutation createRepository names no allowed repository"
+      },
+      {
+        "query": "mutation { a: addReaction(input: {subjectId: \"PR_app\", content: HEART}) { clientMutationId } b: updateUserStatus(input: {message: \"x\"}) { clientMutationId } }",
+        "variables": {},
+        "refusal": "GraphQL mutation updateUserStatus names no allowed repository"
+      },
+      {
+        "query": "mutation($i: CreateCommitOnBranchInput!) { createCommitOnBranch(input: $i) { commit { url } } }",
+        "variables": {
+          "i": {
+            "branch": {
+              "repositoryNameWithOwner": "victim/repo",
+              "branchName": "main"
+            }
+          }
+        },
+        "refusal": "repository github.com/victim/repo is not allowed"
+      },
+      {
+        "query": "query { repository(owner: \"owner\", name: \"app\") { id } } mutation { updateUserStatus(input: {message: \"x\"}) { clientMutationId } }",
+        "variables": {},
+        "refusal": null
+      },
+      {
+        "query": "subscription { x }",
+        "variables": {},
+        "refusal": "GraphQL subscriptions are not checked"
+      },
+      {
+        "query": "mutation($i: CreatePullRequestInput = {repositoryId: \"R_other\"}) { a: createPullRequest(input: $i) { clientMutationId } b: addReaction(input: {subjectId: \"PR_app\", content: HEART}) { clientMutationId } }",
+        "variables": {},
+        "refusal": null
+      },
+      {
+        "query": "mutation($i: CreatePullRequestInput) { a: createPullRequest(input: $i) { clientMutationId } b: addReaction(input: {subjectId: \"PR_app\", content: HEART}) { clientMutationId } }",
+        "variables": {},
+        "refusal": null
+      },
+      {
+        "query": "{ a: repository(owner: \"owner\", name: \"app\") { id } a: repository(owner: \"owner\", name: \"app\") { id ",
+        "variables": {},
+        "refusal": "a GraphQL query that does not parse"
+      },
+      {
+        "query": "{ viewer { login } }\n\"unterminated",
+        "variables": {},
+        "refusal": "a GraphQL query that does not parse"
+      },
+      {
+        "query": "{ viewer { login } # a comment\r\n  repository(owner: \"owner\", name: \"other\") { id } }",
+        "variables": {},
+        "refusal": "repository github.com/owner/other is not allowed"
+      },
+      {
+        "query": "{ viewer { login } # a comment\r  repository(owner: \"owner\", name: \"other\") { id } }",
+        "variables": {},
+        "refusal": "repository github.com/owner/other is not allowed"
+      },
+      {
+        "query": "{ repository(owner: \"owner\", name: \"app\") { id } a: repository(owner: \"x\r\n\", name: \"y\") { id } }",
+        "variables": {},
+        "refusal": "a GraphQL query that does not parse"
+      },
+      {
+        "query": "{ repository(owner: \"owner\", name: \"app\") { id } a: repository(owner: \"x\r\", name: \"y\") { id } }",
+        "variables": {},
+        "refusal": "a GraphQL query that does not parse"
+      },
+      {
+        "query": "{ repository(owner: \"owner\", name: \"app\") { id } a: repository(owner: \"x\n\", name: \"y\") { id } }",
+        "variables": {},
+        "refusal": "a GraphQL query that does not parse"
+      }
+    ],
+    "refusedBodies": [
+      {
+        "body": "[{\"query\":\"{viewer{login}}\"}]",
+        "refusal": "a GraphQL request that is not one JSON object with a query"
+      },
+      {
+        "body": "{\"query\":\"query A { viewer { login } }\",\"operationName\":\"B\"}",
+        "refusal": "no GraphQL operation named B"
+      }
+    ],
+    "nodeIDs": [
+      {
+        "query": "mutation PullRequestCreate($input: CreatePullRequestInput!) { createPullRequest(input: $input) { pullRequest { id url } } }",
+        "variables": {
+          "input": {
+            "repositoryId": "R_app",
+            "clientMutationId": "c1"
+          }
+        },
+        "nodeIDs": [
+          "R_app"
+        ]
+      },
+      {
+        "query": "{ a: node(id: \"PR_app\") { id } b: nodes(ids: [\"U_me\", \"R_app\"]) { id } }",
+        "variables": {},
+        "nodeIDs": [
+          "PR_app",
+          "R_app",
+          "U_me"
+        ]
+      }
+    ]
+  }
+}

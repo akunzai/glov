@@ -1,0 +1,121 @@
+{
+  "name": "codex",
+  "title": "OpenAI Codex CLI",
+  "command": "codex",
+  "verified": {
+    "version": "0.166.0",
+    "date": "2026-10-31"
+  },
+  "docs": [
+    "https://learn.chatgpt.com/docs/agent-configuration/agents-md",
+    "https://learn.chatgpt.com/docs/build-skills",
+    "https://learn.chatgpt.com/docs/agent-configuration/subagents",
+    "https://learn.chatgpt.com/docs/config-file/config-reference",
+    "https://learn.chatgpt.com/docs/config-file/config-advanced",
+    "https://learn.chatgpt.com/docs/noninteractive",
+    "https://github.com/openai/codex/issues/4242"
+  ],
+  "secrets": [
+    {
+      "name": "openai",
+      "delivery": "placeholder",
+      "env": "CODEX_API_KEY",
+      "hosts": [
+        "api.openai.com"
+      ]
+    }
+  ],
+  "environment": {},
+  "files": [
+    {
+      "path": ".codex/config.toml",
+      "text": "# Written by glov vm create --harness codex.\n# A custom provider, because the built-in one tries the Responses WebSocket first, which the glov egress proxy does not\n# relay; it then falls back to HTTPS after about 10 s of retries.\nmodel_provider = \"glov\"\n# Commands run in codex's sandbox (the harness VM allows the user namespaces it needs); what needs more, such as the\n# network or files outside the workspace, goes to its automatic review instead of a person.\nsandbox_mode = \"workspace-write\"\napproval_policy = \"on-request\"\napprovals_reviewer = \"auto_review\"\ncheck_for_update_on_startup = false\n\n[model_providers.glov]\nname = \"OpenAI via glov\"\nbase_url = \"https://api.openai.com/v1\"\nenv_key = \"CODEX_API_KEY\"\nwire_api = \"responses\"\nsupports_websockets = false\n\n# glov secret login <vm> codex switches model_provider to this one: the ChatGPT sign-in in place of the API key. The\n# name \"OpenAI\" makes codex treat it as its own provider, sent to chatgpt.com, with the WebSocket still off.\n[model_providers.glov-chatgpt]\nname = \"OpenAI\"\nrequires_openai_auth = true\nwire_api = \"responses\"\nsupports_websockets = false\n\n[analytics]\nenabled = false\n\n[feedback]\nenabled = false\n"
+    }
+  ],
+  "runtime": [
+    "api.openai.com"
+  ],
+  "install": [
+    "api.openai.com",
+    "registry.npmjs.org",
+    "raw.githubusercontent.com",
+    "github.com",
+    "api.github.com",
+    "release-assets.githubusercontent.com",
+    "objects.githubusercontent.com"
+  ],
+  "installScript": "set -eu\nd=$(mktemp -d)\ncurl -fsSL https://raw.githubusercontent.com/openai/codex/main/scripts/install/install.sh -o \"$d/install.sh\"\nCODEX_NON_INTERACTIVE=true CODEX_INSTALLER_USE_RELEASES_OPENAI_COM=false sh \"$d/install.sh\"\nrm -rf \"$d\"\nsudo ln -sf \"$HOME/.local/bin/codex\" /usr/local/bin/codex\n",
+  "userNamespaces": true,
+  "notes": [
+    "codex exec takes its key from CODEX_API_KEY; OPENAI_API_KEY only pre-fills the sign-in screen.",
+    "Statsig metrics (ab.chatgpt.com) and the update check (api.github.com) are off in config.toml, and denied if anything still tries.",
+    "ChatGPT sign-in (chatgpt.com) is not allowed: the profile uses the API key, the openai secret, which the egress proxy puts in place of the placeholder.",
+    "Observed with the runtime allowlist (0.166.0): codex exec also tries github.com, api.github.com and chatgpt.com, which are denied; the model request still goes through.",
+    "The egress proxy does not relay WebSocket upgrades, so config.toml defines a provider with supports_websockets = false; with the built-in openai provider codex exec retries the Responses WebSocket five times before falling back to HTTPS.",
+    "Installed with the official installer (the repository's scripts/install/install.sh, which chatgpt.com/codex/install.sh redirects to by way of releases.openai.com) forced to GitHub Releases: the single-binary codex-<target>.tar.gz lacks codex-code-mode-host, without which codex runs no tools.",
+    "sandbox_mode = workspace-write, approval_policy = on-request, approvals_reviewer = auto_review: commands run in the bubblewrap sandbox, and escalation requests are approved or denied by the automatic review (extra model calls). The sandbox needs unprivileged user namespaces, which a VM with codex allows (userNamespaces; kernel.apparmor_restrict_unprivileged_userns = 0); without them it fails with \"bwrap: loopback: Failed RTM_NEWADDR\"."
+  ],
+  "subscription": {
+    "signIn": [
+      "codex",
+      "login",
+      "--device-auth"
+    ],
+    "signOut": [
+      "codex",
+      "logout"
+    ],
+    "secrets": [
+      {
+        "name": "access",
+        "delivery": "placeholder",
+        "hosts": [
+          "chatgpt.com"
+        ]
+      },
+      {
+        "name": "refresh",
+        "delivery": "placeholder",
+        "hosts": [
+          "auth.openai.com"
+        ]
+      }
+    ],
+    "tokenEndpoints": [
+      {
+        "host": "auth.openai.com",
+        "path": "/oauth/token",
+        "answer": {
+          "access_token": "access",
+          "refresh_token": "refresh"
+        }
+      },
+      {
+        "host": "auth.openai.com",
+        "path": "/oauth/revoke"
+      }
+    ],
+    "environment": {},
+    "runtime": [
+      "auth.openai.com",
+      "chatgpt.com"
+    ],
+    "settings": [
+      {
+        "path": ".codex/config.toml",
+        "key": [
+          "model_provider"
+        ],
+        "value": "glov-chatgpt"
+      }
+    ]
+  },
+  "hostConfig": [
+    {"host": ".codex/AGENTS.override.md", "guest": ".codex/AGENTS.override.md"},
+    {"host": ".codex/AGENTS.md", "guest": ".codex/AGENTS.md"},
+    {"host": ".agents/skills", "guest": ".agents/skills"},
+    {"host": ".codex/agents", "guest": ".codex/agents"},
+    {"host": ".codex/prompts", "guest": ".codex/prompts"}
+  ],
+  "sessions": [".codex/sessions"]
+}

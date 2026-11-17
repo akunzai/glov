@@ -1,0 +1,117 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # Keep skipped jobs visible for required checks. Unreadable or incomplete file lists run every Go check.
+  # https://docs.github.com/en/pull-requests/reference/status-checks
+  changes:
+    if: ${{ github.event_name != 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      guest: ${{ steps.files.outputs.guest }}
+      windows: ${{ steps.files.outputs.windows }}
+    steps:
+      - uses: actions/checkout@v7
+        if: ${{ github.event_name == 'push' }}
+        with:
+          fetch-depth: 0
+      - id: files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          all() { echo guest=true; echo windows=true; } >> "$GITHUB_OUTPUT"
+          if [ -z "$PR" ]; then
+            if ! files=$(git diff --no-renames --name-only "$BEFORE" "$GITHUB_SHA"); then
+              all; exit 0
+            fi
+          else
+            # The files API lists at most 3000 files: a list shorter than the PR's own count runs the Go checks.
+            # A rename counts its old path too, so moving a file out of guest/ still runs the Go checks.
+            # https://docs.github.com/en/rest/pulls/pulls#list-pull-requests-files
+            if ! total=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$PR" --jq '.changed_files') ||
+              ! files=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[] | .filename, (.previous_filename // empty)') ||
+              ! listed=$(gh api --paginate "repos/$GITHUB_REPOSITORY/pulls/$PR/files" --jq '.[].filename' | wc -l); then
+              all; exit 0
+            fi
+            if [ "$listed" -lt "$total" ]; then all; exit 0; fi
+          fi
+          if grep -qE '^guest/|^mise\.toml$|^\.github/workflows/ci\.yml$' <<< "$files"; then echo guest=true; else echo guest=false; fi >> "$GITHUB_OUTPUT"
+          if grep -qE '^(guest|windows|skills|diskimage)/|^Sources/GlovCore/Harnesses/|^mise\.toml$|^\.github/workflows/ci\.yml$' <<< "$files"; then echo windows=true; else echo windows=false; fi >> "$GITHUB_OUTPUT"
+
+  # A tracked file must not cite an issue or pull request by number; runs for every change, whatever it touches.
+  references:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 -B -m unittest discover -s tools/tests -p 'test_check_*.py' -v
+      - run: python3 -B tools/check-issue-references.py
+
+  host:
+    # QEMU integration tests remain a local check (docs/agents/verification.md).
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - run: python3 -B -m unittest discover -s tools/tests -p 'test_*.py' -v
+      - run: tools/verify.sh
+
+  guest:
+    needs: changes
+    if: ${{ !cancelled() && github.event_name != 'workflow_dispatch' && needs.changes.outputs.guest != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: go
+      - run: test -z "$(gofmt -l guest)" || { gofmt -l guest; echo "run gofmt -w on the files above" >&2; exit 1; }
+      - run: mise run guest:test
+      - run: mise run guest:check-windows-arm64
+
+  # The Windows edition's portable packages, glovd's daemon included, on
+  # Linux, so a Windows-only dependency in them fails here.
+  windows-portable:
+    needs: changes
+    if: ${{ !cancelled() && github.event_name != 'workflow_dispatch' && needs.changes.outputs.windows != 'false' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: go
+      - run: test -z "$(gofmt -l diskimage)" || { gofmt -l diskimage; echo "run gofmt -w on the files above" >&2; exit 1; }
+      - run: mise run diskimage:test
+      - run: mise run windows:test
+
+  windows:
+    needs: changes
+    if: ${{ !cancelled() && github.event_name != 'workflow_dispatch' && needs.changes.outputs.windows != 'false' }}
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: jdx/mise-action@v5
+        with:
+          install_args: go
+      - run: test -z "$(gofmt -l windows)" || { gofmt -l windows; echo "run gofmt -w on the files above" >&2; exit 1; }
+        shell: bash
+      - run: mise run windows:test

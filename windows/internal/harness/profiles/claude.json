@@ -1,0 +1,99 @@
+{
+  "name": "claude",
+  "title": "Claude Code",
+  "command": "claude",
+  "verified": {
+    "version": "2.1.317",
+    "date": "2026-11-03"
+  },
+  "docs": [
+    "https://code.claude.com/docs/en/memory",
+    "https://code.claude.com/docs/en/claude-directory",
+    "https://code.claude.com/docs/en/env-vars",
+    "https://code.claude.com/docs/en/settings-reference",
+    "https://code.claude.com/docs/en/network-config",
+    "https://code.claude.com/docs/en/data-usage",
+    "https://code.claude.com/docs/en/headless"
+  ],
+  "secrets": [
+    {
+      "name": "anthropic",
+      "delivery": "placeholder",
+      "env": "ANTHROPIC_API_KEY",
+      "hosts": [
+        "api.anthropic.com"
+      ]
+    }
+  ],
+  "environment": {
+    "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+    "CLAUDE_CODE_DISABLE_OFFICIAL_MARKETPLACE_AUTOINSTALL": "1"
+  },
+  "files": [
+    {
+      "path": ".claude.json",
+      "json": {
+        "hasCompletedOnboarding": true,
+        "customApiKeyResponses": {
+          "approved": [
+            "lov-secret:anthropic"
+          ],
+          "rejected": []
+        }
+      }
+    },
+    {
+      "path": ".claude/settings.json",
+      "json": {
+        "skipWebFetchPreflight": true,
+        "permissions": {
+          "defaultMode": "auto"
+        }
+      }
+    }
+  ],
+  "runtime": [
+    "api.anthropic.com"
+  ],
+  "install": [
+    "api.anthropic.com",
+    "claude.ai",
+    "downloads.claude.ai",
+    "registry.npmjs.org"
+  ],
+  "installScript": "set -eu\nd=$(mktemp -d)\ncurl -fsSL https://claude.ai/install.sh -o \"$d/install.sh\"\nbash \"$d/install.sh\"\nrm -rf \"$d\"\nsudo ln -sf \"$HOME/.local/bin/claude\" /usr/local/bin/claude\n",
+  "userNamespaces": false,
+  "notes": [
+    "Model calls go to api.anthropic.com through HTTPS_PROXY with the placeholder as the key; the egress proxy puts the anthropic secret in its place. Node trusts the egress CA through NODE_EXTRA_CA_CERTS.",
+    "Telemetry to Datadog (http-intake.logs.us5.datadoghq.com) and release notes from raw.githubusercontent.com are off with CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC, and denied if anything still tries.",
+    "customApiKeyResponses in ~/.claude.json approves the placeholder ANTHROPIC_API_KEY (Claude Code keeps the last 20 characters of a key it approved), so an interactive session does not ask about it; claude -p uses it without asking either way.",
+    "hasCompletedOnboarding in ~/.claude.json skips the first-run onboarding, whose connection check to platform.claude.com is denied and ends the session; the folder trust question still comes up once per project.",
+    "permissions.defaultMode = auto: an unattended claude -p edits files and runs commands that its automatic review allows, instead of stopping at a prompt nobody answers (verified with an API key and Haiku)."
+  ],
+  "subscription": {
+    "pasteHint": "run claude setup-token (on the Mac or anywhere), sign in with the subscription, and paste the token it prints",
+    "secrets": [
+      {
+        "name": "token",
+        "delivery": "placeholder",
+        "env": "CLAUDE_CODE_OAUTH_TOKEN",
+        "hosts": [
+          "api.anthropic.com"
+        ]
+      }
+    ],
+    "tokenEndpoints": [],
+    "environment": {},
+    "runtime": [],
+    "settings": []
+  },
+  "hostConfig": [
+    {"host": ".claude/CLAUDE.md", "guest": ".claude/CLAUDE.md"},
+    {"host": ".claude/rules", "guest": ".claude/rules"},
+    {"host": ".claude/skills", "guest": ".claude/skills"},
+    {"host": ".claude/agents", "guest": ".claude/agents"},
+    {"host": ".claude/commands", "guest": ".claude/commands"},
+    {"host": ".claude/output-styles", "guest": ".claude/output-styles"}
+  ],
+  "sessions": [".claude/projects"]
+}

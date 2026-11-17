@@ -1,0 +1,65 @@
+# Toolchain and build tasks: `mise trust`, `mise install`, then `mise run <task>`
+# (`mise tasks` lists them). Xcode and Swift on macOS are not managed here.
+
+[tools]
+go = "1.27"
+
+[tasks."guest:test"]
+description = "Vet and test the Guest Service (on Linux or macOS, as CI does)"
+dir = "guest"
+run = ["go vet ./...", "go test ./..."]
+
+[tasks."guest:check-windows-arm64"]
+description = "Vet and build the Guest Service for Windows arm64 guests"
+dir = "guest"
+env = { GOOS = "windows", GOARCH = "arm64" }
+run = ["go vet ./...", "go build ./..."]
+
+[tasks."guest:build-linux-amd64"]
+description = "Build the Linux x64 Guest Service the Windows edition installs"
+dir = "guest"
+env = { GOOS = "linux", GOARCH = "amd64", CGO_ENABLED = "0" }
+run = 'go build -ldflags "-X main.version={{ exec(command="sh " ~ config_root ~ "/tools/version.sh") }}" -o ../.build/windows/glov-guest-linux-amd64 ./cmd/glov-guest'
+
+[tasks."diskimage:test"]
+description = "Vet and test the disk image packages both hosts share and the Mac's glov-image helper"
+dir = "diskimage"
+run = ["go vet ./...", "go test ./..."]
+
+[tasks."windows:test"]
+description = "Vet and test the Windows edition: on Windows all of it (HCS tests need an elevated shell), elsewhere its portable packages"
+dir = "windows"
+run = ["go vet ./...", "go test ./..."]
+
+[tasks."windows:build"]
+description = "Build glov.exe, glovd.exe (a GUI program, so it opens no console at sign-in), glov-broker.exe and the Linux Guest Service into .build/windows, versioned by VERSION and git describe"
+depends = ["guest:build-linux-amd64"]
+dir = "windows"
+run = [
+  'go build -ldflags "-X main.version={{ exec(command="sh " ~ config_root ~ "/tools/version.sh") }}" -o ../.build/windows/ ./cmd/glov ./cmd/glov-broker',
+  'go build -ldflags "-H windowsgui -X main.version={{ exec(command="sh " ~ config_root ~ "/tools/version.sh") }}" -o ../.build/windows/ ./cmd/glovd',
+]
+
+[tasks."windows:install"]
+description = "Install or upgrade your glovd from .build/windows (a non-elevated shell)"
+depends = ["windows:build"]
+dir = ".build/windows"
+run = '.\glov.exe host install'
+
+[tasks."windows:install-broker"]
+description = "Install or upgrade glov-broker from .build/windows (an elevated shell)"
+depends = ["windows:build"]
+dir = ".build/windows"
+run = '.\glov.exe host install-broker'
+
+[tasks."repo:check-references"]
+description = "Check that no tracked file cites an issue or pull request by number (CI's references job)"
+run = "python3 -B tools/check-issue-references.py"
+
+[tasks."mac:build"]
+description = "Build the macOS host with bundled Guest Services (tools/build.sh)"
+run = "tools/build.sh"
+
+[tasks."mac:verify"]
+description = "Run the macOS host checks (tools/verify.sh)"
+run = "tools/verify.sh"

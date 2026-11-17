@@ -1,0 +1,129 @@
+{
+  "name": "antigravity",
+  "title": "Antigravity CLI (agy)",
+  "command": "agy",
+  "verified": {
+    "version": "1.4.12",
+    "date": "2026-10-31"
+  },
+  "docs": [
+    "https://antigravity.google/docs/rules",
+    "https://antigravity.google/docs/skills",
+    "https://antigravity.google/docs/customization-discovery",
+    "https://antigravity.google/docs/install?tab=cli",
+    "https://antigravity.google/docs/settings/",
+    "https://antigravity.google/docs/permissions?tab=cli",
+    "https://antigravity.google/docs/cli/reference/",
+    "https://antigravity.google/cli/install.sh",
+    "https://antigravity.google/docs/changelog/"
+  ],
+  "secrets": [
+    {
+      "name": "gemini",
+      "delivery": "placeholder",
+      "env": "GEMINI_API_KEY",
+      "hosts": [
+        "generativelanguage.googleapis.com"
+      ]
+    }
+  ],
+  "environment": {},
+  "files": [
+    {
+      "path": ".gemini/antigravity-cli/settings.json",
+      "json": {
+        "modelProvider": "gemini",
+        "agentMode": "accept-edits",
+        "toolPermission": "always-proceed"
+      }
+    }
+  ],
+  "runtime": [
+    "generativelanguage.googleapis.com"
+  ],
+  "install": [
+    "generativelanguage.googleapis.com",
+    "antigravity.google",
+    "antigravity-cli-auto-updater-974169037036.us-central1.run.app",
+    "storage.googleapis.com"
+  ],
+  "installScript": "set -eu\nd=$(mktemp -d)\ncurl -fsSL https://antigravity.google/cli/install.sh -o \"$d/install.sh\"\nbash \"$d/install.sh\"\nrm -rf \"$d\"\nsudo ln -sf \"$HOME/.local/bin/agy\" /usr/local/bin/agy\n",
+  "userNamespaces": false,
+  "notes": [
+    "GEMINI_API_KEY has no effect without \"modelProvider\": \"gemini\" in settings.json.",
+    "Usage telemetry is an account-level setting with no settings.json key; under the runtime allowlist it is denied.",
+    "The CLI updates itself in the background from its Cloud Run updater and storage.googleapis.com, with no documented switch; under the runtime allowlist the update is denied and the installed version keeps running.",
+    "storage.googleapis.com in the install allowlist reaches every public bucket, not only Antigravity's: the proxy cannot see paths inside TLS.",
+    "Observed with the runtime allowlist (1.4.12): agy also tries play.googleapis.com (usage logging) and its updater, which are denied; the model request still goes through.",
+    "Observed with a real key (1.4.12): besides the chosen model, each agy -p also calls gemini-3.1-flash-lite-preview, which counts toward the Gemini key's usage.",
+    "Model calls go to generativelanguage.googleapis.com through HTTPS_PROXY. The egress proxy replaces the placeholder in header values only, so the key must go in x-goog-api-key, not a ?key= parameter.",
+    "agentMode = accept-edits and toolPermission = always-proceed: agy -p edits files and runs commands, web requests and MCP tools without prompting; deny and ask rules still apply. Its automatic review (agentMode auto) is not available to API-key accounts (\"--mode auto is not available for this account\", 1.4.12), so the isolated VM is the boundary."
+  ],
+  "subscription": {
+    "signIn": [
+      "agy",
+      "--model",
+      "gemini-3.8-flash-low",
+      "-p",
+      "Reply with the single word: ok"
+    ],
+    "signOut": [
+      "rm",
+      "-f",
+      ".gemini/antigravity-cli/antigravity-oauth-token"
+    ],
+    "secrets": [
+      {
+        "name": "access",
+        "delivery": "placeholder",
+        "hosts": [
+          "daily-cloudcode-pa.googleapis.com",
+          "www.googleapis.com"
+        ]
+      },
+      {
+        "name": "refresh",
+        "delivery": "placeholder",
+        "hosts": [
+          "oauth2.googleapis.com"
+        ]
+      }
+    ],
+    "tokenEndpoints": [
+      {
+        "host": "oauth2.googleapis.com",
+        "path": "/token",
+        "answer": {
+          "access_token": "access",
+          "refresh_token": "refresh"
+        }
+      }
+    ],
+    "environment": {},
+    "runtime": [
+      "oauth2.googleapis.com",
+      "www.googleapis.com",
+      "daily-cloudcode-pa.googleapis.com"
+    ],
+    "settings": [
+      {
+        "path": ".gemini/antigravity-cli/settings.json",
+        "key": [
+          "modelProvider"
+        ]
+      }
+    ]
+  },
+  "hostConfig": [
+    {"host": ".gemini/AGENTS.md", "guest": ".gemini/AGENTS.md"},
+    {"host": ".gemini/GEMINI.md", "guest": ".gemini/GEMINI.md"},
+    {"host": ".gemini/config/AGENTS.md", "guest": ".gemini/config/AGENTS.md"},
+    {"host": ".gemini/config/GEMINI.md", "guest": ".gemini/config/GEMINI.md"},
+    {"host": ".gemini/config/rules", "guest": ".gemini/config/rules"},
+    {"host": ".gemini/config/skills", "guest": ".gemini/config/skills"},
+    {"host": ".gemini/config/agents", "guest": ".gemini/config/agents"},
+    {"host": ".gemini/antigravity-cli/skills", "guest": ".gemini/antigravity-cli/skills"},
+    {"host": ".gemini/skills", "guest": ".gemini/skills"}
+  ],
+  "sessions": [".gemini/antigravity-cli/conversations"]
+}

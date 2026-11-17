@@ -1,0 +1,7 @@
+# LF in every checkout, Windows included: gofmt, the shell and the guest
+# all write LF, and a CRLF working tree made each tool's output a
+# whole-file change that core.safecrlf refused to stage.
+* text=auto eol=lf
+
+# Signed bytes: a CRLF checkout would break the signature.
+diskimage/pgpsig/testdata/* -text
