@@ -37,6 +37,18 @@ import Testing
 
         #expect(c.engine == .qemu && c.cpus == 6 && c.memory == "12G" && c.tpm && c.network && c.sshPort == nil)
         #expect(!c.balloon, "without glov-qemu a new Windows VM gets no balloon device")
+        let uuid = try #require(c.uuid)
+        #expect(UUID(uuidString: uuid) != nil && uuid == uuid.lowercased())
+        let mac = try #require(c.macAddress)
+        #expect(mac.wholeMatch(of: /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/) != nil)
+        let firstOctet = try #require(UInt8(mac.prefix(2), radix: 16))
+        #expect((firstOctet & 0x03) == 0x02, "expected unicast locally administered MAC, got \(mac)")
+        let serial = try #require(c.diskSerial)
+        #expect(serial.hasPrefix("glov-") && serial.count == 17)
+        let args = try c.qemuArguments()
+        #expect(args.contains("-uuid") && args.contains(uuid) && args.contains("type=1,serial=\(uuid)"))
+        #expect(args.contains("nvme,drive=disk0,serial=\(serial),bootindex=0"))
+        #expect(args.contains("virtio-net-pci,netdev=net0,mac=\(mac)"))
         #expect(c.disk == dir + "/disk.qcow2" && c.firmwareCode == f.home.path + "/code.fd")
         #expect(c.extraDrives == [
             .init(path: f.home.path + "/win.iso", cdrom: true, bootIndex: 1), .init(path: f.home.path + "/virtio.iso", cdrom: true),

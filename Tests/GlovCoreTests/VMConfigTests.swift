@@ -149,6 +149,35 @@ import Testing
         #expect(c == windows())
         #expect(!c.network && c.install == nil)
         #expect(!c.balloon, "a VM made before the balloon existed keeps its devices")
+        #expect(c.uuid == nil && c.macAddress == nil && c.diskSerial == nil)
+    }
+
+    @Test func perVMIdentifiersPassUUIDSMBIOSMACAndDiskSerialToQEMU() throws {
+        var c = windows()
+        let uuid = "12345678-1234-4123-8123-123456789abc"
+        let mac = "02:aa:bb:cc:dd:ee"
+        let serial = "glov-0123456789ab"
+        c.uuid = uuid
+        c.macAddress = mac
+        c.diskSerial = serial
+        let a = try c.qemuArguments()
+        let uuidIndex = try #require(a.firstIndex(of: "-uuid"))
+        #expect(a[uuidIndex + 1] == uuid)
+        let smbiosIndex = try #require(a.firstIndex(of: "-smbios"))
+        #expect(a[smbiosIndex + 1] == "type=1,serial=\(uuid)")
+        #expect(a.contains("nvme,drive=disk0,serial=\(serial),bootindex=0"))
+        #expect(a.contains("virtio-net-pci,netdev=net0,mac=\(mac)"))
+        #expect(try JSONDecoder().decode(VMConfig.self, from: JSONEncoder().encode(c)) == c)
+    }
+
+    @Test func randomDiskSerialFitsNVMeLimitAndVaries() {
+        let a = VMConfig.randomDiskSerial(), b = VMConfig.randomDiskSerial()
+        #expect(a != b)
+        for s in [a, b] {
+            #expect(s.hasPrefix("glov-") && s.count == 17 && s.utf8.count <= 20)
+            let hex = s.dropFirst(5)
+            #expect(hex.count == 12 && hex.allSatisfy { ("0"..."9").contains($0) || ("a"..."f").contains($0) })
+        }
     }
 
     @Test func theBalloonDeviceNeedsBothTheSwitchAndAQEMUThatFreesMemory() throws {
