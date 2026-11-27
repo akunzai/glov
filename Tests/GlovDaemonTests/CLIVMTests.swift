@@ -20,9 +20,16 @@ import Testing
             home: home)
         #expect(r.status == 0, "\(r.err)")
         let c = try home.loadConfig("win11")
+        let uuid = try #require(c.uuid)
+        #expect(UUID(uuidString: uuid) != nil && uuid == uuid.lowercased())
+        let mac = try #require(c.macAddress)
+        #expect(mac.wholeMatch(of: /^([0-9a-f]{2}:){5}[0-9a-f]{2}$/) != nil)
+        let serial = try #require(c.diskSerial)
+        #expect(serial.hasPrefix("glov-") && serial.count == 17)
         #expect(c == VMConfig(
             name: "win11", directory: home.directory(of: "win11"), cpus: 2, memory: "4G", disk: "/d/disk.qcow2", firmwareCode: home.path + "/code.fd",
-            tpm: true, sshPort: 2222, portForwards: [.init(host: 8080, guest: 80)]))
+            tpm: true, sshPort: 2222, portForwards: [.init(host: 8080, guest: 80)],
+            macAddress: mac, uuid: uuid, diskSerial: serial))
         #expect(!c.network && c.install == nil && c.extraDrives.isEmpty)
     }
 

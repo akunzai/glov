@@ -83,10 +83,14 @@ private let qemuShare: String? = {
         let disk = dir + "/disk.qcow2"
         _ = try await Snapshots.run(try Snapshots.qemuImgPath(), ["create", "-f", "qcow2", disk, "64M"])
 
-        let config = VMConfig(name: "snap", directory: dir, cpus: 2, memory: "1G", disk: disk, firmwareCode: code, firmwareVars: vars, tpm: true, sshPort: try freePort())
+        let uuid = UUID().uuidString.lowercased()
+        let config = VMConfig(
+            name: "snap", directory: dir, cpus: 2, memory: "1G", disk: disk, firmwareCode: code, firmwareVars: vars,
+            tpm: true, sshPort: try freePort(), macAddress: VMConfig.randomMACAddress(), uuid: uuid, diskSerial: VMConfig.randomDiskSerial())
         let vm = try VirtualMachine(config: config)
         try await vm.start()
         defer { Task { await vm.stop(timeout: .zero) } }
+        #expect(try await vm.qmpClient().execute("query-uuid")["UUID"] == .string(uuid))
         let console = try await vm.console()
 
         func settled() async throws -> Data {

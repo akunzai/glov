@@ -123,9 +123,7 @@ public struct LinuxProvisioner {
 
     /// A random unicast, locally administered address.
     public static func randomMACAddress() -> String {
-        var bytes = (0..<6).map { _ in UInt8.random(in: 0...255) }
-        bytes[0] = (bytes[0] & 0xfc) | 0x02
-        return bytes.map { String(format: "%02x", $0) }.joined(separator: ":")
+        VMConfig.randomMACAddress()
     }
 
     /// Blocks until the tool exits: async code calls the provisioners through `Blocking.run`.

@@ -174,7 +174,12 @@ public struct VMConfig: Codable, Sendable, Equatable {
     /// Host directories `copy_to_vm` / `copy_from_vm` may read or write.
     public var hostPathAllowlist: [String]
     /// VZ: the NIC's MAC address, fixed so the guest keeps its DHCP lease across boots. Nil picks a random one per start.
+    /// QEMU: `virtio-net-pci` `mac` address; nil keeps QEMU's default (`52:54:00:12:34:56`) for older VMs.
     public var macAddress: String?
+    /// QEMU: SMBIOS system UUID (`-uuid` and `-smbios type=1,serial=...`); nil keeps QEMU's default for older VMs.
+    public var uuid: String?
+    /// QEMU: NVMe system disk serial (`nvme,drive=disk0,serial=...`); nil keeps legacy `glov0` for older VMs.
+    public var diskSerial: String?
     /// A Windows install still to finish (QEMU only).
     public var install: Install?
     /// Host folders shared with the guest (`Share`); none unless added.
@@ -215,13 +220,26 @@ public struct VMConfig: Codable, Sendable, Equatable {
         return [dir.appendingPathComponent("shared").path, dir.deletingLastPathComponent().appendingPathComponent("scratch").path]
     }
 
+    /// A random unicast, locally administered MAC address.
+    public static func randomMACAddress() -> String {
+        var bytes = (0..<6).map { _ in UInt8.random(in: 0...255) }
+        bytes[0] = (bytes[0] & 0xfc) | 0x02
+        return bytes.map { String(format: "%02x", $0) }.joined(separator: ":")
+    }
+
+    /// A per-VM NVMe serial (`glov-<12 hex>`), 17 ASCII bytes (within the 20-byte NVMe serial limit).
+    public static func randomDiskSerial() -> String {
+        let suffix = (0..<6).map { _ in String(format: "%02x", UInt8.random(in: 0...255)) }.joined()
+        return "glov-\(suffix)"
+    }
+
     public init(
         name: String, directory: String, engine: Engine = .qemu, cpus: Int = 2, memory: String = "4G", disk: String? = nil,
         firmwareCode: String, firmwareVars: String? = nil, tpm: Bool = true, sshPort: Int? = nil, network: Bool = false,
         portForwards: [PortForward] = [], extraDrives: [Drive] = [], guestService: Bool = true, agentControl: Bool = true, hostPathAllowlist: [String]? = nil,
         macAddress: String? = nil, install: Install? = nil, shares: [Share] = [], isolated: Bool = false, egress: Egress? = nil,
         harnesses: [String]? = nil, balloon: Bool = false, balloonAuto: Bool = false, balloonTarget: UInt64? = nil,
-        project: Project? = nil
+        project: Project? = nil, uuid: String? = nil, diskSerial: String? = nil
     ) {
         self.name = name
         self.directory = directory
@@ -249,6 +267,8 @@ public struct VMConfig: Codable, Sendable, Equatable {
         self.balloonAuto = balloonAuto
         self.balloonTarget = balloonTarget
         self.project = project
+        self.uuid = uuid
+        self.diskSerial = diskSerial
     }
 
     /// Keys added after the first release are optional, so older `vm.json` files still load.
@@ -274,7 +294,9 @@ public struct VMConfig: Codable, Sendable, Equatable {
             balloon: try c.decodeIfPresent(Bool.self, forKey: .balloon) ?? false,
             balloonAuto: try c.decodeIfPresent(Bool.self, forKey: .balloonAuto) ?? false,
             balloonTarget: try c.decodeIfPresent(UInt64.self, forKey: .balloonTarget),
-            project: try c.decodeIfPresent(Project.self, forKey: .project))
+            project: try c.decodeIfPresent(Project.self, forKey: .project),
+            uuid: try c.decodeIfPresent(String.self, forKey: .uuid),
+            diskSerial: try c.decodeIfPresent(String.self, forKey: .diskSerial))
     }
 
     private func path(_ component: String) -> String {
@@ -361,6 +383,9 @@ public struct VMConfig: Codable, Sendable, Equatable {
             "-drive", "if=pflash,format=raw,readonly=on,file=\(e(firmwareCode))",
             "-drive", "if=pflash,format=raw,file=\(e(firmwareVars))",
         ]
+        if let uuid {
+            a += ["-uuid", uuid, "-smbios", "type=1,serial=\(e(uuid))"]
+        }
         if tpm {
             a += [
                 "-chardev", "socket,id=chrtpm,path=\(e(tpmSocketPath))",
@@ -370,16 +395,17 @@ public struct VMConfig: Codable, Sendable, Equatable {
             ]
         }
         if let disk {
+            let serial = diskSerial ?? "glov0"
             a += [
                 "-drive", "if=none,id=disk0,node-name=\(Self.systemNode),file=\(e(disk)),format=qcow2,cache=writeback,discard=unmap",
-                "-device", "nvme,drive=disk0,serial=glov0,bootindex=0",
+                "-device", "nvme,drive=disk0,serial=\(e(serial)),bootindex=0",
             ]
         }
         let forwards = (sshPort.map { [PortForward(host: $0, guest: 22)] } ?? []) + portForwards
         if !forwards.isEmpty || network {
             a += [
                 "-netdev", "user,id=net0" + forwards.map { ",hostfwd=tcp:127.0.0.1:\($0.host)-:\($0.guest)" }.joined(),
-                "-device", "virtio-net-pci,netdev=net0",
+                "-device", "virtio-net-pci,netdev=net0" + (macAddress.map { ",mac=\(e($0))" } ?? ""),
             ]
         }
         if guestService {

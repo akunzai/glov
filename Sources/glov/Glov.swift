@@ -390,7 +390,8 @@ struct VMCommand: AsyncParsableCommand {
             let config = VMConfig(
                 name: name, directory: home.directory(of: name), cpus: cpus ?? 2, memory: memory ?? "4G", disk: disk,
                 firmwareCode: firmwareCode ?? "", firmwareVars: firmwareVars, tpm: !noTpm, sshPort: sshPort,
-                portForwards: forwards, extraDrives: drives)
+                portForwards: forwards, extraDrives: drives, macAddress: VMConfig.randomMACAddress(),
+                uuid: UUID().uuidString.lowercased(), diskSerial: VMConfig.randomDiskSerial())
             try home.create(config)
             try addShares(in: home)
             print("created \(config.directory)/vm.json")

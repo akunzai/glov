@@ -136,7 +136,8 @@ public struct WindowsProvisioner {
             let config = VMConfig(
                 name: name, directory: dir, cpus: cpus, memory: memory, disk: disk, firmwareCode: firmwareCode, tpm: true,
                 sshPort: sshPort, network: true, portForwards: portForwards, extraDrives: installDrives + extraDrives,
-                install: .init(drives: installDrives.map(\.path)), balloon: balloon, balloonAuto: balloon)
+                macAddress: VMConfig.randomMACAddress(), install: .init(drives: installDrives.map(\.path)),
+                balloon: balloon, balloonAuto: balloon, uuid: UUID().uuidString.lowercased(), diskSerial: VMConfig.randomDiskSerial())
             try home.create(config)
             return try home.loadConfig(name)
         } catch {
