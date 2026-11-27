@@ -52,6 +52,22 @@ import Testing
         let skill = try await glov(["guide"])
         let skillText = try skillFile("SKILL.md")
         #expect(skill.status == 0 && skill.out == skillText)
+        #expect(skillText.hasPrefix("---\n"))
+        let afterOpen = skillText.dropFirst(4)
+        let closeRange = try #require(afterOpen.range(of: "\n---\n"))
+        let frontmatter = afterOpen[..<closeRange.lowerBound]
+        var fields: [String: String] = [:]
+        for line in frontmatter.split(separator: "\n", omittingEmptySubsequences: true) {
+            let colon = try #require(line.firstIndex(of: ":"), "expected key: value in frontmatter line: \(line)")
+            let key = String(line[..<colon]).trimmingCharacters(in: .whitespaces)
+            let value = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+            let first = try #require(value.first, "empty frontmatter value for \(key)")
+            #expect(first.isASCII && (first.isLetter || first.isNumber || first == "\"" || first == "'"),
+                    "frontmatter \(key) starts with unsafe YAML character '\(first)': \(value)")
+            fields[key] = value
+        }
+        #expect(fields["name"] == "glov")
+        #expect(!(fields["description"] ?? "").isEmpty)
         let troubleshooting = try await glov(["guide", "troubleshooting"])
         let troubleshootingText = try skillFile("references/troubleshooting.md")
         #expect(troubleshooting.status == 0 && troubleshooting.out == troubleshootingText)
