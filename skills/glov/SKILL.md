@@ -1,6 +1,6 @@
 ---
 name: glov
-description: `glov` CLI gotchas. Use when running commands or moving files in a Windows or Linux guest (glov exec, cp, share), when an isolated VM cannot reach a host or its model API (glov egress, glov secret), or when glov misbehaves.
+description: glov CLI gotchas. Use when running commands or moving files in a Windows or Linux guest (glov exec, cp, share), when an isolated VM cannot reach a host or its model API (glov egress, glov secret), or when glov misbehaves.
 ---
 
 # glov (`glov`)
