@@ -25,11 +25,20 @@ public actor VirtualMachine {
     /// `qemu-system-aarch64` from glov-qemu when it is installed (its virtio-balloon frees memory on macOS),
     /// else the first one `find` sees.
     public static func findQEMU(prefixes: [String] = glovQEMUPrefixes) throws -> String {
+        try findQEMUTool("qemu-system-aarch64", prefixes: prefixes)
+    }
+
+    /// `qemu-img` from glov-qemu when it is installed, else the first one `find` sees.
+    public static func findQEMUImg(prefixes: [String] = glovQEMUPrefixes) throws -> String {
+        try findQEMUTool("qemu-img", prefixes: prefixes)
+    }
+
+    private static func findQEMUTool(_ name: String, prefixes: [String]) throws -> String {
         for prefix in prefixes {
-            let candidate = prefix + "/bin/qemu-system-aarch64"
+            let candidate = prefix + "/bin/" + name
             if FileManager.default.isExecutableFile(atPath: candidate) { return candidate }
         }
-        return try find("qemu-system-aarch64")
+        return try find(name)
     }
 
     /// True for a `qemu-system-aarch64 --version` of glov-qemu, which marks itself with this package version.

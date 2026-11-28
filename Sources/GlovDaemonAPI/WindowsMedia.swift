@@ -124,6 +124,7 @@ public struct WindowsMedia: MediaDownloads {
             log("cached: \(iso)")
             return iso
         }
+        _ = try findTool("wimlib-imagex")
         let source = try fetch(esd)
         try convert(source, esd: esd, to: iso)
         return iso
