@@ -10,6 +10,23 @@ public struct VMConfigurator {
         directory + "/resize-partition"
     }
 
+    public static func pendingDNSResetPath(_ directory: String) -> String {
+        directory + "/reset-dns"
+    }
+
+    /// PowerShell snippet that sets (`servers` non-empty) or resets to DHCP (`servers` empty) the DNS servers on Windows
+    /// QEMU VirtIO network adapters (falling back to any `Up` adapter), without relying on localized adapter aliases.
+    public static func windowsDNSScript(_ servers: [String]) -> String {
+        let args = servers.isEmpty
+            ? "-ResetServerAddresses"
+            : "-ServerAddresses @(" + servers.map { "'\($0)'" }.joined(separator: ",") + ")"
+        return "$ErrorActionPreference = 'Stop'; "
+            + "$a = @(Get-NetAdapter | Where-Object { $_.InterfaceDescription -like '*VirtIO*' }); "
+            + "if (-not $a) { $a = @(Get-NetAdapter | Where-Object { $_.Status -eq 'Up' }) }; "
+            + "if (-not $a) { throw 'no network adapter found' }; "
+            + "foreach ($n in $a) { Set-DnsClientServerAddress -InterfaceIndex $n.ifIndex \(args) }"
+    }
+
     var run: (String, [String]) throws -> (status: Int32, output: String) = LinuxProvisioner.runTool
     var findTool: (String) throws -> String = { $0 == "qemu-img" ? try VirtualMachine.findQEMUImg() : try VirtualMachine.find($0) }
 

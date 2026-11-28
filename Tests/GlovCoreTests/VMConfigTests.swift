@@ -251,7 +251,23 @@ import Testing
     }
 
     @Test func roundTripsThroughJSON() throws {
-        let data = try JSONEncoder().encode(windows())
-        #expect(try JSONDecoder().decode(VMConfig.self, from: data) == windows())
+        var config = windows()
+        config.dns = ["1.1.1.1", "2606:4700:4700::1111"]
+        let data = try JSONEncoder().encode(config)
+        #expect(try JSONDecoder().decode(VMConfig.self, from: data) == config)
+    }
+
+    @Test func parseDNSValidatesCanonicalizesDeduplicatesAndHandlesAuto() throws {
+        #expect(VMConfig.canonicalDNSAddress(" 1.1.1.1 ") == "1.1.1.1")
+        #expect(VMConfig.canonicalDNSAddress("[2606:4700:4700:0:0:0:0:1111]") == "2606:4700:4700::1111")
+        #expect(VMConfig.canonicalDNSAddress("dns.google") == nil)
+        #expect(VMConfig.canonicalDNSAddress("1.1.1.1;calc") == nil)
+
+        #expect(try VMConfig.parseDNS(["1.1.1.1, 8.8.8.8", "1.1.1.1", "[2606:4700:4700::1111]"], allowAuto: false) == ["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111"])
+        #expect(try VMConfig.parseDNS(["AUTO"], allowAuto: true) == [])
+        #expect(throws: GlovError.self) { try VMConfig.parseDNS(["auto"], allowAuto: false) }
+        #expect(throws: GlovError.self) { try VMConfig.parseDNS(["auto", "1.1.1.1"], allowAuto: true) }
+        #expect(throws: GlovError.self) { try VMConfig.parseDNS(["1.1.1.1,"], allowAuto: true) }
+        #expect(throws: GlovError.self) { try VMConfig.parseDNS(["not-an-ip"], allowAuto: false) }
     }
 }

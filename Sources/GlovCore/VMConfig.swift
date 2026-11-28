@@ -180,6 +180,8 @@ public struct VMConfig: Codable, Sendable, Equatable {
     public var uuid: String?
     /// QEMU: NVMe system disk serial (`nvme,drive=disk0,serial=...`); nil keeps legacy `glov0` for older VMs.
     public var diskSerial: String?
+    /// QEMU: guest DNS servers (IPv4/IPv6) applied inside Windows instead of slirp's 10.0.2.3; nil uses DHCP.
+    public var dns: [String]?
     /// A Windows install still to finish (QEMU only).
     public var install: Install?
     /// Host folders shared with the guest (`Share`); none unless added.
@@ -239,7 +241,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         portForwards: [PortForward] = [], extraDrives: [Drive] = [], guestService: Bool = true, agentControl: Bool = true, hostPathAllowlist: [String]? = nil,
         macAddress: String? = nil, install: Install? = nil, shares: [Share] = [], isolated: Bool = false, egress: Egress? = nil,
         harnesses: [String]? = nil, balloon: Bool = false, balloonAuto: Bool = false, balloonTarget: UInt64? = nil,
-        project: Project? = nil, uuid: String? = nil, diskSerial: String? = nil
+        project: Project? = nil, uuid: String? = nil, diskSerial: String? = nil, dns: [String]? = nil
     ) {
         self.name = name
         self.directory = directory
@@ -269,6 +271,7 @@ public struct VMConfig: Codable, Sendable, Equatable {
         self.project = project
         self.uuid = uuid
         self.diskSerial = diskSerial
+        self.dns = dns
     }
 
     /// Keys added after the first release are optional, so older `vm.json` files still load.
@@ -296,7 +299,51 @@ public struct VMConfig: Codable, Sendable, Equatable {
             balloonTarget: try c.decodeIfPresent(UInt64.self, forKey: .balloonTarget),
             project: try c.decodeIfPresent(Project.self, forKey: .project),
             uuid: try c.decodeIfPresent(String.self, forKey: .uuid),
-            diskSerial: try c.decodeIfPresent(String.self, forKey: .diskSerial))
+            diskSerial: try c.decodeIfPresent(String.self, forKey: .diskSerial),
+            dns: try c.decodeIfPresent([String].self, forKey: .dns))
+    }
+
+    /// Canonical numeric IPv4 or IPv6 address (brackets stripped), or nil for anything else.
+    public static func canonicalDNSAddress(_ text: String) -> String? {
+        var s = text.trimmingCharacters(in: .whitespaces)
+        if s.hasPrefix("[") && s.hasSuffix("]") { s = String(s.dropFirst().dropLast()) }
+        func format(_ family: Int32, _ pointer: UnsafeRawPointer, _ length: Int32) -> String? {
+            var buf = [UInt8](repeating: 0, count: Int(length))
+            guard inet_ntop(family, pointer, &buf, socklen_t(buf.count)) != nil else { return nil }
+            return String(decoding: buf.prefix { $0 != 0 }, as: UTF8.self)
+        }
+        var v4 = in_addr()
+        if inet_pton(AF_INET, s, &v4) == 1 { return format(AF_INET, &v4, INET_ADDRSTRLEN) }
+        var v6 = in6_addr()
+        if inet_pton(AF_INET6, s, &v6) == 1 { return format(AF_INET6, &v6, INET6_ADDRSTRLEN) }
+        return nil
+    }
+
+    /// Parses `--dns` arguments (repeatable and/or comma-separated IPv4/IPv6 addresses, or `auto` when `allowAuto`).
+    /// Returns `[]` for `auto` (reset to DHCP), else canonical deduplicated addresses in order.
+    public static func parseDNS(_ specs: [String], allowAuto: Bool) throws -> [String] {
+        let items = specs.flatMap { $0.split(separator: ",", omittingEmptySubsequences: false).map { $0.trimmingCharacters(in: .whitespaces) } }
+        guard !items.isEmpty, !items.contains(where: \.isEmpty) else {
+            throw GlovError.unsupported("invalid --dns address: give an IPv4 or IPv6 address (for example 1.1.1.1)")
+        }
+        if items.contains(where: { $0.caseInsensitiveCompare("auto") == .orderedSame }) {
+            guard allowAuto else {
+                throw GlovError.unsupported("--dns auto is for vm configure; omit --dns on vm create to use DHCP")
+            }
+            guard items.count == 1 else {
+                throw GlovError.unsupported("--dns auto cannot be combined with DNS server addresses")
+            }
+            return []
+        }
+        var seen: Set<String> = []
+        var result: [String] = []
+        for item in items {
+            guard let ip = canonicalDNSAddress(item) else {
+                throw GlovError.unsupported("invalid --dns address \(item): give an IPv4 or IPv6 address (for example 1.1.1.1)")
+            }
+            if seen.insert(ip).inserted { result.append(ip) }
+        }
+        return result
     }
 
     private func path(_ component: String) -> String {

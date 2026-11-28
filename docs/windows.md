@@ -24,7 +24,9 @@ and create it again.
 The guest is driven through the Guest Service. To also reach it over SSH, add `--ssh`: OpenSSH is installed for key
 authentication only, with the key in `<vm>/secrets/id_ed25519`, and `--ssh-port` (or a free port) on `127.0.0.1` forwards
 to it. `glov ssh win11` opens a shell (`glov ssh win11 -- hostname` runs one command): it replaces itself with
-`/usr/bin/ssh` as user `glov` with that key, and keeps host keys in `<vm>/known_hosts`, not `~/.ssh/known_hosts`.
+`/usr/bin/ssh` as user `glov` with that key, and keeps host keys in `<vm>/known_hosts`, not `~/.ssh/known_hosts`. If
+the Mac is on a VPN that breaks QEMU's `10.0.2.3` DNS forwarder, pass `--dns 1.1.1.1,8.8.8.8` at creation or switch
+any time with `glov vm configure win11 --dns 1.1.1.1,8.8.8.8` (`--dns auto` resets to DHCP).
 
 `glov host media` builds the install ISO from Microsoft's Windows 11 24H2 Media Creation Tool catalog; Windows Update
 brings the guest current. To register a disk that already has Windows on it instead, pass `--disk <qcow2>` and

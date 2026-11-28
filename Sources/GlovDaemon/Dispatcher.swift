@@ -117,6 +117,12 @@ public actor Dispatcher {
                 try await self.configureVM(name, cpus: p.cpus, memory: p.memory, diskSize: p.diskSize, balloon: p.balloon, requireChange: true)
                 return try JSONValue(encoding: await self.info(name))
             }
+        case Method.vmDNS:
+            let p = try params.decode(Params.DNS.self)
+            let name = try resolve(p.vm)
+            return try await exclusive(name) {
+                try JSONValue(encoding: try await self.setDNS(name, servers: p.servers))
+            }
         case Method.vmBalloon:
             let p = try params.decode(Params.Balloon.self)
             let name = try resolve(p.vm)
@@ -509,6 +515,31 @@ public actor Dispatcher {
                     config, cpus: cpus, memory: memory, diskSize: diskSize, balloon: balloon, requireChange: requireChange)
             }
         }
+    }
+
+    private func setDNS(_ name: String, servers: [String]) async throws -> Results.DNS {
+        let current = try home.loadConfig(name)
+        guard current.engine == .qemu else { throw ProvisionError("--dns is for QEMU (Windows) VMs") }
+        let canonical = servers.isEmpty ? [] : try VMConfig.parseDNS(servers, allowAuto: false)
+        let home = home
+        _ = try await Blocking.run {
+            try home.update(name) { config in
+                config.dns = canonical.isEmpty ? nil : canonical
+                let marker = VMConfigurator.pendingDNSResetPath(config.directory)
+                if canonical.isEmpty {
+                    FileManager.default.createFile(atPath: marker, contents: Data(), attributes: [.posixPermissions: 0o600])
+                } else {
+                    try? FileManager.default.removeItem(atPath: marker)
+                }
+            }
+        }
+        if let agent = agents[name], await agent.isReady {
+            if let problem = await agent.syncDNS() {
+                throw RPCError(code: RPCError.failed, message: "saved, but \(problem); the next Guest Service session retries")
+            }
+            return Results.DNS(vm: name, servers: canonical, applied: true)
+        }
+        return Results.DNS(vm: name, servers: canonical, applied: false)
     }
 
     /// `vm.balloon`: fixes (with `size`) or hands to glovd (`auto`) how much memory a QEMU guest keeps through its
@@ -1028,6 +1059,12 @@ public actor Dispatcher {
             await agent.setTrust { [weak self] in
                 guard let config = try? self?.home.loadConfig(name) else { return nil }
                 return config.egress?.trust ?? []
+            }
+        }
+        if config.engine == .qemu {
+            await agent.setDNS { [weak self] in
+                guard let config = try? self?.home.loadConfig(name) else { return nil }
+                return config.dns
             }
         }
         await agent.start()

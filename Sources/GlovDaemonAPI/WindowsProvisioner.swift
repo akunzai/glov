@@ -33,6 +33,8 @@ public struct WindowsProvisioner {
     public var portForwards: [VMConfig.PortForward] = []
     /// More drives, after the install drives.
     public var extraDrives: [VMConfig.Drive] = []
+    /// Custom DNS servers (canonical IPv4/IPv6) applied inside the guest; empty uses DHCP (10.0.2.3).
+    public var dns: [String] = []
     /// Runs a tool and returns its exit status; output never reaches the terminal, so nothing secret can.
     var run: (String, [String]) throws -> (status: Int32, output: String) = LinuxProvisioner.runTool
     /// Whether glovd would start this VM on glov-qemu: only then does it get the balloon device by default.
@@ -219,7 +221,8 @@ public struct WindowsProvisioner {
                 name: name, directory: dir, cpus: cpus, memory: memory, disk: disk, firmwareCode: firmwareCode, tpm: true,
                 sshPort: sshPort, network: true, portForwards: portForwards, extraDrives: installDrives + extraDrives,
                 macAddress: VMConfig.randomMACAddress(), install: .init(drives: installDrives.map(\.path)),
-                balloon: balloon, balloonAuto: balloon, uuid: UUID().uuidString.lowercased(), diskSerial: VMConfig.randomDiskSerial())
+                balloon: balloon, balloonAuto: balloon, uuid: UUID().uuidString.lowercased(), diskSerial: VMConfig.randomDiskSerial(),
+                dns: dns.isEmpty ? nil : dns)
             try home.create(config)
             return try home.loadConfig(name)
         } catch {
@@ -251,7 +254,7 @@ public struct WindowsProvisioner {
         let fm = FileManager.default
         try fm.createDirectory(atPath: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try writePrivate(Data(try WindowsAssets.autounattend(password: password, language: language, edition: edition, timeZone: timeZone).utf8), to: dir + "/autounattend.xml")
-        try Data(WindowsAssets.setupScript(publicKey: publicKey).utf8).write(to: URL(fileURLWithPath: dir + "/setup.ps1"))
+        try Data(WindowsAssets.setupScript(publicKey: publicKey, dns: dns).utf8).write(to: URL(fileURLWithPath: dir + "/setup.ps1"))
         if publicKey != nil { try Data(WindowsAssets.openSSHScript.utf8).write(to: URL(fileURLWithPath: dir + "/setup-openssh-server.ps1")) }
         try fm.copyItem(atPath: guestServiceBinary, toPath: dir + "/glov-guest.exe")
     }

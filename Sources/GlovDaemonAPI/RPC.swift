@@ -66,6 +66,7 @@ public enum Method {
     public static let vmList = "vm.list"
     public static let vmStatus = "vm.status"
     public static let vmConfigure = "vm.configure"
+    public static let vmDNS = "vm.dns"
     public static let vmStart = "vm.start"
     public static let vmStop = "vm.stop"
     public static let vmReboot = "vm.reboot"
@@ -237,6 +238,13 @@ public enum Params {
         public init(vm: String, cpus: Int? = nil, memory: String? = nil, diskSize: String? = nil, balloon: Bool? = nil) {
             self.vm = vm; self.cpus = cpus; self.memory = memory; self.diskSize = diskSize; self.balloon = balloon
         }
+    }
+
+    /// `vm.dns`: set (`servers` non-empty) or reset to DHCP (`servers` empty) a QEMU (Windows) VM's guest DNS servers.
+    public struct DNS: Codable, Sendable {
+        public var vm: String
+        public var servers: [String]
+        public init(vm: String, servers: [String]) { self.vm = vm; self.servers = servers }
     }
 
     /// `vm.balloon`: with `size` (QEMU -m syntax), fixes how much memory the guest keeps; with `auto`, lets glovd choose
@@ -423,6 +431,13 @@ public enum Params {
 }
 
 public enum Results {
+    /// `vm.dns`: the saved DNS servers (empty when reset to DHCP) and whether the running guest updated now.
+    public struct DNS: Codable, Sendable, Equatable {
+        public var vm: String
+        public var servers: [String]
+        public var applied: Bool
+        public init(vm: String, servers: [String], applied: Bool) { self.vm = vm; self.servers = servers; self.applied = applied }
+    }
     /// `vm.balloon`: the guest's memory now, and the target when one was just set. The guest gives memory up gradually,
     /// and the Windows driver stops early when the guest runs short, so `memory` can stay above `target`.
     public struct Balloon: Codable, Sendable, Equatable {

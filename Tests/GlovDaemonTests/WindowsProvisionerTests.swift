@@ -74,8 +74,10 @@ import Testing
         var f = try Fixture()
         defer { f.cleanup() }
         f.p.balloonSupported = { true }
+        f.p.dns = ["1.1.1.1", "8.8.8.8"]
         let c = try await offPool { try f.p.create(in: f.home) }
         #expect(c.balloon && c.balloonAuto && c.balloonTarget == nil)
+        #expect(c.dns == ["1.1.1.1", "8.8.8.8"])
     }
 
     @Test(.enabled(if: toolsAvailable, "qemu-img is required")) func sshAddsAKeyAndTheForward() async throws {
@@ -122,6 +124,11 @@ import Testing
         #expect(ssh.hasSuffix("-DisablePasswordAuth\nSet-Content -Path C:\\glov-setup.done -Value (Get-Date -Format o)\nStop-Transcript\n"))
         // The Guest Service is installed before OpenSSH, so an OpenSSH failure leaves the VM reachable.
         #expect(ssh.range(of: "glov-guest.exe\" install")!.lowerBound < ssh.range(of: "setup-openssh-server.ps1\" -Use")!.lowerBound)
+
+        let withDNS = WindowsAssets.setupScript(publicKey: "ssh-ed25519 AAAAC3Nza glov@win\n", dns: ["1.1.1.1", "8.8.8.8"])
+        #expect(withDNS.contains("Set-DnsClientServerAddress -InterfaceIndex $n.ifIndex -ServerAddresses @('1.1.1.1','8.8.8.8')"))
+        #expect(withDNS.range(of: "glov-guest.exe\" install")!.lowerBound < withDNS.range(of: "Set-DnsClientServerAddress")!.lowerBound)
+        #expect(withDNS.range(of: "Set-DnsClientServerAddress")!.lowerBound < withDNS.range(of: "setup-openssh-server.ps1\" -Use")!.lowerBound)
     }
 
     @Test func autounattendFollowsLanguageAndEdition() throws {

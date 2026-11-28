@@ -63,12 +63,24 @@ public enum WindowsAssets {
             .replacingOccurrences(of: "@PASSWORD@", with: xmlEscaped(password))
     }
 
-    /// `setup.ps1`, run at first logon. With `publicKey` it also installs OpenSSH, key only, through `openSSHScript`.
-    public static func setupScript(publicKey: String?) -> String {
+    /// `setup.ps1`, run at first logon. With `dns` it overrides the VirtIO NIC's DNS servers before any download; with
+    /// `publicKey` it installs OpenSSH, key only, through `openSSHScript`.
+    public static func setupScript(publicKey: String?, dns: [String] = []) -> String {
+        let dnsSection = dns.isEmpty ? nil : """
+
+            # Custom guest DNS (vm create --dns): applied before any setup downloads (such as OpenSSH).
+            try {
+                \(VMConfigurator.windowsDNSScript(dns))
+            } catch { Write-Warning "DNS setup: $_" }
+
+            """
         let ssh = publicKey.map { key in
             openSSHSection.replacingOccurrences(of: "@PUBKEY@", with: key.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "'", with: "''"))
         }
-        return setupTemplate.replacingOccurrences(of: "@OPENSSH@\n", with: ssh ?? "").replacingOccurrences(of: "@DONE@", with: setupDoneMarker)
+        return setupTemplate
+            .replacingOccurrences(of: "@DNS@\n", with: dnsSection ?? "")
+            .replacingOccurrences(of: "@OPENSSH@\n", with: ssh ?? "")
+            .replacingOccurrences(of: "@DONE@", with: setupDoneMarker)
     }
 
     static func xmlEscaped(_ s: String) -> String {
@@ -220,6 +232,7 @@ public enum WindowsAssets {
                 & "$guestServiceDir\blnsvr.exe" -i
             }
         } catch { Write-Warning "balloon service: $_" }
+        @DNS@
         @OPENSSH@
         Set-Content -Path @DONE@ -Value (Get-Date -Format o)
         Stop-Transcript

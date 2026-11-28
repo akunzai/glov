@@ -60,6 +60,9 @@ struct VMCommand: AsyncParsableCommand {
                     let egress = config.egress ?? .init()
                     print("  egress: \(egress.open == true ? "open (any public host, through the proxy)" : "restricted (\(egress.allow.count) allowed)")")
                 }
+                if let dns = try? GlovHome.resolve().loadConfig(info.name).dns, !dns.isEmpty {
+                    print("  dns: \(dns.joined(separator: ", "))")
+                }
                 if let share = try? GlovHome.resolve().loadConfig(info.name).shares.first(where: { $0.name == HarnessSessions.shareName }) {
                     let used = HarnessSessions.usage(share.hostPath)
                     print("  conversation records: \(share.hostPath) (\(used.map { "\($0.files) files, \(HarnessCommand.Install.size($0.bytes))" } ?? "none yet"))")
@@ -83,13 +86,21 @@ struct VMCommand: AsyncParsableCommand {
         var egress: EgressModeOption?
         @Flag(help: "With --egress open: open a VM even though a harness of it holds a secret as a real value in tmpfs, which any host could then receive. Without a terminal this is the only way; with one, glov asks.")
         var allowPlainSecrets = false
+        @Option(help: "QEMU (Windows), running or stopped: guest DNS server IPv4/IPv6 address (repeatable or comma-separated, e.g. 1.1.1.1,8.8.8.8), or auto to reset to DHCP (10.0.2.3). Pass on its own.")
+        var dns: [String] = []
 
         func validate() throws {
-            if cpus == nil && memory == nil && diskSize == nil && balloon == nil && egress == nil {
-                throw ValidationError("pass at least one of --cpus, --memory, --disk-size, --balloon or --egress")
+            if cpus == nil && memory == nil && diskSize == nil && balloon == nil && egress == nil && dns.isEmpty {
+                throw ValidationError("pass at least one of --cpus, --memory, --disk-size, --balloon, --egress or --dns")
             }
-            if egress != nil, cpus != nil || memory != nil || diskSize != nil || balloon != nil {
+            if egress != nil, cpus != nil || memory != nil || diskSize != nil || balloon != nil || !dns.isEmpty {
                 throw ValidationError("pass --egress on its own: it applies to a running VM, the other options need it stopped")
+            }
+            if !dns.isEmpty, cpus != nil || memory != nil || diskSize != nil || balloon != nil {
+                throw ValidationError("pass --dns on its own: it applies to a running or stopped Windows VM")
+            }
+            if !dns.isEmpty {
+                do { _ = try VMConfig.parseDNS(dns, allowAuto: true) } catch { throw ValidationError("\(error)") }
             }
             if allowPlainSecrets, egress != .open { throw ValidationError("--allow-plain-secrets goes with --egress open") }
             if let cpus, cpus < 1 { throw ValidationError("--cpus must be at least 1") }
@@ -106,6 +117,13 @@ struct VMCommand: AsyncParsableCommand {
                             Method.egressMode, Params.EgressMode(vm: vm, open: egress == .open, allowPlainSecrets: allow ? true : nil), as: Results.Egress.self)
                     }
                     print(describeEgressMode(r))
+                    return
+                }
+                if !dns.isEmpty {
+                    let servers = try VMConfig.parseDNS(dns, allowAuto: true)
+                    let r = try await client.call(Method.vmDNS, Params.DNS(vm: vm, servers: servers), as: Results.DNS.self)
+                    let suffix = r.applied ? "" : " (applies on next Guest Service session)"
+                    print(r.servers.isEmpty ? "\(r.vm): DNS reset to DHCP (10.0.2.3)\(suffix)" : "\(r.vm): DNS set to \(r.servers.joined(separator: ", "))\(suffix)")
                     return
                 }
                 let info = try await client.call(
@@ -245,6 +263,8 @@ struct VMCommand: AsyncParsableCommand {
         @Option(help: "QEMU: host port forwarded to guest port 22 (Windows install: with --ssh, default a free port).") var sshPort: Int?
         @Option(help: "QEMU: host port on 127.0.0.1 forwarded to a guest TCP port: HOST:GUEST. Repeatable.") var forward: [String] = []
         @Option(help: "QEMU: extra USB drive: path[,cdrom][,removable][,bootindex=N]. Repeatable.") var drive: [String] = []
+        @Option(help: "QEMU (Windows): guest DNS server IPv4/IPv6 address (repeatable or comma-separated, e.g. 1.1.1.1,8.8.8.8); bypasses QEMU slirp's 10.0.2.3 when the Mac is on a VPN.")
+        var dns: [String] = []
         @Option(help: "QEMU, Windows install: language of the install media, e.g. en-US or zh-TW (default \(WindowsProvisioner.defaultLanguage)).") var language: String?
         @Option(help: "QEMU, Windows install: Windows time zone ID, e.g. \"Taipei Standard Time\" (default: the host's, from Unicode CLDR's mapping; Setup's own default when the host's has none).") var timeZone: String?
         @Option(help: "QEMU, Windows install: \(WindowsAssets.editions.keys.sorted().joined(separator: " or ")) (default \(WindowsProvisioner.defaultEdition)).") var edition: String?
@@ -276,6 +296,9 @@ struct VMCommand: AsyncParsableCommand {
                 if agent != nil || ssh || language != nil || edition != nil || timeZone != nil || diskSize != nil {
                     throw ValidationError("--guest-service, --ssh, --language, --edition, --time-zone and --disk-size are for a new Windows install, without --disk")
                 }
+                if !dns.isEmpty {
+                    do { _ = try VMConfig.parseDNS(dns, allowAuto: false) } catch { throw ValidationError("\(error)") }
+                }
             case .qemu:
                 if image != nil || distro != nil || isolated { throw ValidationError("--image, --distro and --isolated are for --engine vz") }
                 if noTpm { throw ValidationError("--no-tpm: Windows 11 Setup needs a TPM") }
@@ -287,12 +310,15 @@ struct VMCommand: AsyncParsableCommand {
                 if let timeZone {
                     do { _ = try WindowsAssets.timeZone(requested: timeZone, hostIdentifier: "") } catch { throw ValidationError("\(error)") }
                 }
+                if !dns.isEmpty {
+                    do { _ = try VMConfig.parseDNS(dns, allowAuto: false) } catch { throw ValidationError("\(error)") }
+                }
             case .vz:
                 if distro != nil && image != nil { throw ValidationError("pass either --distro or --image, not both") }
                 if firmwareCode != nil || firmwareVars != nil || disk != nil || sshPort != nil || !forward.isEmpty || noTpm || !drive.isEmpty
-                    || ssh || language != nil || edition != nil || timeZone != nil
+                    || ssh || language != nil || edition != nil || timeZone != nil || !dns.isEmpty
                 {
-                    throw ValidationError("--firmware-code, --firmware-vars, --disk, --no-tpm, --ssh, --ssh-port, --forward, --drive, --language, --edition and --time-zone are for --engine qemu")
+                    throw ValidationError("--firmware-code, --firmware-vars, --disk, --no-tpm, --ssh, --ssh-port, --forward, --drive, --language, --edition, --time-zone and --dns are for --engine qemu")
                 }
             }
             if let sshPort, !(1...65535).contains(sshPort) { throw ValidationError("--ssh-port must be 1-65535") }
@@ -382,8 +408,9 @@ struct VMCommand: AsyncParsableCommand {
             }
             let forwards = try forward.map { try VMConfig.PortForward(spec: $0) }
             let drives = try drive.map { try VMConfig.Drive(spec: $0) }
+            let dnsServers = try dns.isEmpty ? [] : VMConfig.parseDNS(dns, allowAuto: false)
             if installsWindows {
-                try await Blocking.run { [self] in try createWindows(in: home, forwards: forwards, drives: drives) }
+                try await Blocking.run { [self] in try createWindows(in: home, forwards: forwards, drives: drives, dnsServers: dnsServers) }
                 try addShares(in: home)
                 return true
             }
@@ -391,14 +418,15 @@ struct VMCommand: AsyncParsableCommand {
                 name: name, directory: home.directory(of: name), cpus: cpus ?? 2, memory: memory ?? "4G", disk: disk,
                 firmwareCode: firmwareCode ?? "", firmwareVars: firmwareVars, tpm: !noTpm, sshPort: sshPort,
                 portForwards: forwards, extraDrives: drives, macAddress: VMConfig.randomMACAddress(),
-                uuid: UUID().uuidString.lowercased(), diskSerial: VMConfig.randomDiskSerial())
+                uuid: UUID().uuidString.lowercased(), diskSerial: VMConfig.randomDiskSerial(),
+                dns: dnsServers.isEmpty ? nil : dnsServers)
             try home.create(config)
             try addShares(in: home)
             print("created \(config.directory)/vm.json")
             return false
         }
 
-        private func createWindows(in home: GlovHome, forwards: [VMConfig.PortForward], drives: [VMConfig.Drive]) throws {
+        private func createWindows(in home: GlovHome, forwards: [VMConfig.PortForward], drives: [VMConfig.Drive], dnsServers: [String]) throws {
             let firmware = try WindowsProvisioner.checkHostTools(firmwareCode: firmwareCode)
             let guestService = try agent ?? GuestServiceDistribution.target(os: "windows").path
             try WindowsProvisioner.checkGuestServiceBinary(guestService)
@@ -418,8 +446,10 @@ struct VMCommand: AsyncParsableCommand {
             p.sshPort = ssh ? try sshPort ?? WindowsProvisioner.freePort() : nil
             p.portForwards = forwards
             p.extraDrives = drives
+            p.dns = dnsServers
             let config = try p.create(in: home)
             print("created \(config.directory)/vm.json: Windows 11 \(esd.edition) (\(language)) installs on the first start")
+            if !dnsServers.isEmpty { print("dns: \(dnsServers.joined(separator: ", "))") }
             if let zone = p.timeZone {
                 print("time zone: \(zone)")
             } else {
