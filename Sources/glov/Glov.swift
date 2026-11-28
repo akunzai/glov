@@ -398,14 +398,16 @@ struct VMCommand: AsyncParsableCommand {
         }
 
         private func createWindows(in home: GlovHome, forwards: [VMConfig.PortForward], drives: [VMConfig.Drive]) throws {
+            let firmware = try WindowsProvisioner.checkHostTools(firmwareCode: firmwareCode)
             let guestService = try agent ?? GuestServiceDistribution.target(os: "windows").path
+            try WindowsProvisioner.checkGuestServiceBinary(guestService)
             let language = WindowsAssets.languageTag(language ?? WindowsProvisioner.defaultLanguage)
             let media = WindowsMedia()
             let esd = try media.catalog().select(language: language, edition: edition ?? WindowsProvisioner.defaultEdition)
             let iso = try media.makeISO(esd)
             let virtio = try media.virtioISO()
             var p = WindowsProvisioner(
-                name: name, iso: iso, virtio: virtio, guestServiceBinary: guestService, firmwareCode: try firmwareCode ?? WindowsProvisioner.defaultFirmware())
+                name: name, iso: iso, virtio: virtio, guestServiceBinary: guestService, firmwareCode: firmware)
             p.language = language
             p.edition = esd.edition
             p.timeZone = try WindowsAssets.timeZone(requested: timeZone, hostIdentifier: TimeZone.current.identifier)

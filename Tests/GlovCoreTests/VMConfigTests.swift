@@ -180,6 +180,9 @@ import Testing
         #expect(try VirtualMachine.findQEMU(prefixes: ["/nonexistent/glov-qemu", dir]) == qemu)
         #expect(VirtualMachine.supportsBalloon(qemu: qemu))
         #expect(!VirtualMachine.supportsBalloon(qemu: dir + "/bin/missing"))
+        let qemuImg = dir + "/bin/qemu-img"
+        FileManager.default.createFile(atPath: qemuImg, contents: Data("#!/bin/sh\nexit 0\n".utf8), attributes: [.posixPermissions: 0o755])
+        #expect(try VirtualMachine.findQEMUImg(prefixes: ["/nonexistent/glov-qemu", dir]) == qemuImg)
     }
 
     @Test func theVersionCacheAsksAgainWhenTheBinaryBehindThePathChanges() {

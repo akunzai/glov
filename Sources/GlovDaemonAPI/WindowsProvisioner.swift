@@ -55,6 +55,91 @@ public struct WindowsProvisioner {
     /// It holds the password in plain text, so it lives in `secrets/`; the daemon deletes it once the install is done.
     public static func unattendImagePath(_ dir: String) -> String { dir + "/secrets/unattend.cdr" }
 
+    /// A host command required to build and run Windows VMs on macOS and the Homebrew formula that provides it.
+    public struct HostToolRequirement: Equatable, Sendable {
+        public var tool: String
+        public var package: String
+
+        public init(tool: String, package: String) {
+            self.tool = tool
+            self.package = package
+        }
+    }
+
+    /// Host tools required by the Windows VM create and start path, in install order.
+    public static let hostTools: [HostToolRequirement] = [
+        .init(tool: "qemu-system-aarch64", package: "qemu"),
+        .init(tool: "qemu-img", package: "qemu"),
+        .init(tool: "swtpm", package: "swtpm"),
+        .init(tool: "wimlib-imagex", package: "wimlib"),
+    ]
+
+    /// Returns the Windows host tools missing from `glov-qemu`, `PATH`, `/opt/homebrew/bin` and `/usr/local/bin`.
+    public static func missingHostTools(
+        findQEMU: () throws -> String = { try VirtualMachine.findQEMU() },
+        findQEMUImg: () throws -> String = { try VirtualMachine.findQEMUImg() },
+        find: (String) throws -> String = { try VirtualMachine.find($0) }
+    ) -> [HostToolRequirement] {
+        hostTools.filter { req in
+            switch req.tool {
+            case "qemu-system-aarch64": (try? findQEMU()) == nil
+            case "qemu-img": (try? findQEMUImg()) == nil
+            default: (try? find(req.tool)) == nil
+            }
+        }
+    }
+
+    /// Deduplicated Homebrew formulas for `missing`, preserving order.
+    public static func brewPackages(for missing: [HostToolRequirement]) -> [String] {
+        var seen: Set<String> = []
+        return missing.map(\.package).filter { seen.insert($0).inserted }
+    }
+
+    /// Error text naming every missing Windows host tool and one `brew install` command, or `nil` when none are missing.
+    public static func missingHostToolsMessage(_ missing: [HostToolRequirement]) -> String? {
+        guard !missing.isEmpty else { return nil }
+        let tools = missing.map(\.tool).joined(separator: ", ")
+        let packages = brewPackages(for: missing).joined(separator: " ")
+        return "missing host tools for Windows VMs: \(tools) (brew install \(packages))"
+    }
+
+    /// Non-fatal note for `glov host install` when Windows host tools are missing, or `nil` when all are present.
+    public static func missingHostToolsNote(_ missing: [HostToolRequirement]) -> String? {
+        guard !missing.isEmpty else { return nil }
+        let tools = missing.map(\.tool).joined(separator: ", ")
+        let packages = brewPackages(for: missing).joined(separator: " ")
+        return "note: Windows VMs need \(tools) (brew install \(packages)); Linux VMs need none of them"
+    }
+
+    /// Verifies `path` begins with a Windows PE ("MZ") header.
+    public static func checkGuestServiceBinary(_ path: String) throws {
+        let header = (try? FileHandle(forReadingFrom: URL(fileURLWithPath: path)).read(upToCount: 2)) ?? nil
+        guard header == Data("MZ".utf8) else {
+            throw ProvisionError("not a Windows executable: \(path) (build it: cd guest && GOOS=windows GOARCH=arm64 go build -o <out>.exe ./cmd/glov-guest)")
+        }
+    }
+
+    /// Verifies every Windows host tool and resolves the UEFI firmware before `vm create` downloads anything.
+    public static func checkHostTools(
+        firmwareCode: String?,
+        findQEMU: () throws -> String = { try VirtualMachine.findQEMU() },
+        findQEMUImg: () throws -> String = { try VirtualMachine.findQEMUImg() },
+        find: (String) throws -> String = { try VirtualMachine.find($0) },
+        defaultFirmware: () throws -> String = { try WindowsProvisioner.defaultFirmware() }
+    ) throws -> String {
+        let missing = missingHostTools(findQEMU: findQEMU, findQEMUImg: findQEMUImg, find: find)
+        if let message = missingHostToolsMessage(missing) {
+            throw ProvisionError(message)
+        }
+        if let firmwareCode {
+            guard FileManager.default.fileExists(atPath: firmwareCode) else {
+                throw ProvisionError("UEFI firmware not found: \(firmwareCode)")
+            }
+            return firmwareCode
+        }
+        return try defaultFirmware()
+    }
+
     /// The EDK2 firmware that ships with QEMU, next to `qemu-system-aarch64` (through its unversioned prefix, so a QEMU
     /// upgrade does not break the VM). Homebrew's qemu comes first, so the VM keeps booting if glov-qemu is uninstalled;
     /// glov-qemu's copy serves when it is the only QEMU.
@@ -106,14 +191,11 @@ public struct WindowsProvisioner {
         for (what, path) in [("install ISO", iso), ("virtio-win ISO", virtio), ("UEFI firmware", firmwareCode)] where !fm.fileExists(atPath: path) {
             throw ProvisionError("\(what) not found: \(path)")
         }
-        let header = (try? FileHandle(forReadingFrom: URL(fileURLWithPath: guestServiceBinary)).read(upToCount: 2)) ?? nil
-        guard header == Data("MZ".utf8) else {
-            throw ProvisionError("not a Windows executable: \(guestServiceBinary) (build it: cd guest && GOOS=windows GOARCH=arm64 go build -o <out>.exe ./cmd/glov-guest)")
-        }
+        try Self.checkGuestServiceBinary(guestServiceBinary)
         let dir = try home.makeVMDirectory(name)
         do {
             let qemuImg: String
-            do { qemuImg = try VirtualMachine.find("qemu-img") } catch { throw ProvisionError("\(error) (brew install qemu)") }
+            do { qemuImg = try VirtualMachine.findQEMUImg() } catch { throw ProvisionError("\(error) (brew install qemu)") }
             let disk = Self.diskPath(dir)
             let r = try run(qemuImg, ["create", "-q", "-f", "qcow2", "-o", "cluster_size=1M,lazy_refcounts=on", disk, String(diskSize)])
             guard r.status == 0 else { throw ProvisionError("qemu-img create failed: \(r.output)") }

@@ -61,6 +61,9 @@ struct DaemonCommand: AsyncParsableCommand {
                 if let impact, !noRestart { outcomes += await reload.restart(impact) }
                 if impact != nil, !noGuestUpdate { outcomes += await reload.updateGuestServices() }
                 if impact != nil { print(DaemonReload.summary(outcomes)) }
+                if let note = WindowsProvisioner.missingHostToolsNote(WindowsProvisioner.missingHostTools()) {
+                    FileHandle.standardError.write(Data((note + "\n").utf8))
+                }
                 if outcomes.contains(where: \.failed) { throw ExitCode.failure }
             }
         }

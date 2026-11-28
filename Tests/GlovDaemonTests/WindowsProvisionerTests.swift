@@ -209,4 +209,121 @@ import Testing
         let port = try WindowsProvisioner.freePort()
         #expect((1024...65535).contains(port))
     }
+
+    @Test func missingHostToolsDeduplicatePackagesAndFormatMessages() {
+        let none: (String) throws -> String = { throw GlovError.executableNotFound($0) }
+        let allMissing = WindowsProvisioner.missingHostTools(
+            findQEMU: { try none("qemu-system-aarch64") },
+            findQEMUImg: { try none("qemu-img") },
+            find: none)
+        #expect(allMissing.map(\.tool) == ["qemu-system-aarch64", "qemu-img", "swtpm", "wimlib-imagex"])
+        #expect(WindowsProvisioner.brewPackages(for: allMissing) == ["qemu", "swtpm", "wimlib"])
+        #expect(
+            WindowsProvisioner.missingHostToolsMessage(allMissing)
+                == "missing host tools for Windows VMs: qemu-system-aarch64, qemu-img, swtpm, wimlib-imagex (brew install qemu swtpm wimlib)")
+        #expect(
+            WindowsProvisioner.missingHostToolsNote(allMissing)
+                == "note: Windows VMs need qemu-system-aarch64, qemu-img, swtpm, wimlib-imagex (brew install qemu swtpm wimlib); Linux VMs need none of them")
+
+        let partial = WindowsProvisioner.missingHostTools(
+            findQEMU: { "/opt/homebrew/opt/glov-qemu/bin/qemu-system-aarch64" },
+            findQEMUImg: { try none("qemu-img") },
+            find: { name in
+                if name == "wimlib-imagex" { return "/opt/homebrew/bin/wimlib-imagex" }
+                throw GlovError.executableNotFound(name)
+            })
+        #expect(partial.map(\.tool) == ["qemu-img", "swtpm"])
+        #expect(WindowsProvisioner.brewPackages(for: partial) == ["qemu", "swtpm"])
+        #expect(WindowsProvisioner.missingHostToolsMessage(partial) == "missing host tools for Windows VMs: qemu-img, swtpm (brew install qemu swtpm)")
+
+        let onlySwtpm = WindowsProvisioner.missingHostTools(
+            findQEMU: { "/opt/homebrew/bin/qemu-system-aarch64" },
+            findQEMUImg: { "/opt/homebrew/bin/qemu-img" },
+            find: { name in
+                if name == "swtpm" { throw GlovError.executableNotFound(name) }
+                return "/opt/homebrew/bin/\(name)"
+            })
+        #expect(onlySwtpm.map(\.tool) == ["swtpm"])
+        #expect(WindowsProvisioner.missingHostToolsMessage(onlySwtpm) == "missing host tools for Windows VMs: swtpm (brew install swtpm)")
+
+        let onlyWimlib = WindowsProvisioner.missingHostTools(
+            findQEMU: { "/opt/homebrew/bin/qemu-system-aarch64" },
+            findQEMUImg: { "/opt/homebrew/bin/qemu-img" },
+            find: { name in
+                if name == "wimlib-imagex" { throw GlovError.executableNotFound(name) }
+                return "/opt/homebrew/bin/\(name)"
+            })
+        #expect(onlyWimlib.map(\.tool) == ["wimlib-imagex"])
+        #expect(WindowsProvisioner.missingHostToolsMessage(onlyWimlib) == "missing host tools for Windows VMs: wimlib-imagex (brew install wimlib)")
+
+        let present = WindowsProvisioner.missingHostTools(
+            findQEMU: { "/opt/homebrew/bin/qemu-system-aarch64" },
+            findQEMUImg: { "/opt/homebrew/bin/qemu-img" },
+            find: { "/opt/homebrew/bin/\($0)" })
+        #expect(present.isEmpty)
+        #expect(WindowsProvisioner.missingHostToolsMessage(present) == nil)
+        #expect(WindowsProvisioner.missingHostToolsNote(present) == nil)
+    }
+
+    @Test func checkHostToolsValidatesToolsAndFirmwareBeforeDownload() throws {
+        let dir = try shortTempDir()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let fw = dir + "/code.fd"
+        FileManager.default.createFile(atPath: fw, contents: Data(count: 64))
+
+        var firmwareLookedUp = false
+        let missingError = #expect(throws: ProvisionError.self) {
+            try WindowsProvisioner.checkHostTools(
+                firmwareCode: nil,
+                findQEMU: { "/opt/homebrew/bin/qemu-system-aarch64" },
+                findQEMUImg: { "/opt/homebrew/bin/qemu-img" },
+                find: { name in
+                    if name == "swtpm" { throw GlovError.executableNotFound(name) }
+                    return "/opt/homebrew/bin/\(name)"
+                },
+                defaultFirmware: { firmwareLookedUp = true; return fw })
+        }
+        #expect(missingError?.description == "missing host tools for Windows VMs: swtpm (brew install swtpm)")
+        #expect(!firmwareLookedUp, "missing host tools fails before probing firmware")
+
+        let allPresent: (String?) throws -> String = { requested in
+            try WindowsProvisioner.checkHostTools(
+                firmwareCode: requested,
+                findQEMU: { "/opt/homebrew/bin/qemu-system-aarch64" },
+                findQEMUImg: { "/opt/homebrew/bin/qemu-img" },
+                find: { "/opt/homebrew/bin/\($0)" },
+                defaultFirmware: { firmwareLookedUp = true; return fw })
+        }
+        #expect(try allPresent(fw) == fw)
+        #expect(!firmwareLookedUp)
+        let missingFWError = #expect(throws: ProvisionError.self) {
+            _ = try allPresent(dir + "/missing.fd")
+        }
+        #expect(missingFWError?.description == "UEFI firmware not found: \(dir)/missing.fd")
+        #expect(try allPresent(nil) == fw)
+        #expect(firmwareLookedUp)
+
+        let defaultFWError = #expect(throws: ProvisionError.self) {
+            try WindowsProvisioner.checkHostTools(
+                firmwareCode: nil,
+                findQEMU: { "/opt/homebrew/bin/qemu-system-aarch64" },
+                findQEMUImg: { "/opt/homebrew/bin/qemu-img" },
+                find: { "/opt/homebrew/bin/\($0)" },
+                defaultFirmware: { throw ProvisionError("UEFI firmware not found at /missing/code.fd; pass --firmware-code") })
+        }
+        #expect(defaultFWError?.description == "UEFI firmware not found at /missing/code.fd; pass --firmware-code")
+    }
+
+    @Test func checkGuestServiceBinaryRequiresWindowsPEHeader() throws {
+        let dir = try shortTempDir()
+        defer { try? FileManager.default.removeItem(atPath: dir) }
+        let exe = dir + "/glov-guest.exe"
+        let elf = dir + "/glov-guest"
+        FileManager.default.createFile(atPath: exe, contents: Data("MZ fake agent".utf8))
+        FileManager.default.createFile(atPath: elf, contents: Data([0x7f, 0x45, 0x4c, 0x46]))
+
+        try WindowsProvisioner.checkGuestServiceBinary(exe)
+        #expect(throws: ProvisionError.self) { try WindowsProvisioner.checkGuestServiceBinary(elf) }
+        #expect(throws: ProvisionError.self) { try WindowsProvisioner.checkGuestServiceBinary(dir + "/missing.exe") }
+    }
 }

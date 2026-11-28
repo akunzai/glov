@@ -133,7 +133,7 @@ public enum Snapshots {
 
     // MARK: stopped VM: qemu-img
 
-    static func qemuImgPath() throws -> String { try VirtualMachine.find("qemu-img") }
+    static func qemuImgPath() throws -> String { try VirtualMachine.findQEMUImg() }
 
     static func qemuImg(_ args: [String]) async throws -> Data { try await run(try qemuImgPath(), args) }
 

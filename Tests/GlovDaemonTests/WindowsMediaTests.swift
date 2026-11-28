@@ -169,6 +169,18 @@ import Testing
         #expect(calls.list.isEmpty)
     }
 
+    @Test func missingWimlibIsRefusedBeforeDownloadingButNotWhenISOIsCached() throws {
+        defer { try? FileManager.default.removeItem(atPath: cache) }
+        var missing = media()
+        missing.findTool = { name in throw MediaError("\(name) not found (brew install wimlib)") }
+        #expect(throws: MediaError("wimlib-imagex not found (brew install wimlib)")) { try missing.makeISO(esd) }
+        #expect(calls.list.isEmpty, "missing wimlib-imagex must fail before downloading the ESD")
+
+        let cached = try media().makeISO(esd)
+        missing.findTool = { name in throw MediaError("\(name) not found (brew install wimlib)") }
+        #expect(try missing.makeISO(esd) == cached)
+    }
+
     @Test func theCacheFollowsGlovCache() {
         #expect(WindowsMedia.defaultCache(environment: ["GLOV_CACHE": "/Volumes/X/cache"]) == "/Volumes/X/cache/windows")
         #expect(WindowsMedia.defaultCache(environment: [:]).hasSuffix("/Library/Caches/glov/windows"))

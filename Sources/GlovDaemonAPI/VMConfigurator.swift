@@ -11,7 +11,7 @@ public struct VMConfigurator {
     }
 
     var run: (String, [String]) throws -> (status: Int32, output: String) = LinuxProvisioner.runTool
-    var findTool: (String) throws -> String = VirtualMachine.find
+    var findTool: (String) throws -> String = { $0 == "qemu-img" ? try VirtualMachine.findQEMUImg() : try VirtualMachine.find($0) }
 
     public init() {}
 

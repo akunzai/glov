@@ -173,4 +173,24 @@ import Testing
         #expect(WindowsAssets.languageTag("zh-tw") == "zh-TW" && WindowsAssets.languageTag("EN-us") == "en-US")
         #expect(WindowsAssets.languageTag("sr-latn-rs") == "sr-latn-rs")
     }
+
+    @Test(.timeLimit(.minutes(1))) func windowsInstallFailsFastBeforeDownloadingWhenPrerequisitesAreMissing() async throws {
+        let home = try makeHome()
+        defer { try? FileManager.default.removeItem(atPath: home.path) }
+        if WindowsProvisioner.missingHostTools().isEmpty {
+            let missingFW = try await runglov(
+                ["vm", "create", "--no-start", "w", "--firmware-code", home.path + "/missing.fd"], home: home)
+            #expect(missingFW.status != 0 && missingFW.err.contains("UEFI firmware not found:"), "\(missingFW.err)")
+
+            let badAgent = home.path + "/bad-agent"
+            FileManager.default.createFile(atPath: badAgent, contents: Data([0x7f, 0x45, 0x4c, 0x46]))
+            let invalidAgent = try await runglov(
+                ["vm", "create", "--no-start", "w", "--firmware-code", home.path + "/code.fd", "--guest-service", badAgent], home: home)
+            #expect(invalidAgent.status != 0 && invalidAgent.err.contains("not a Windows executable:"), "\(invalidAgent.err)")
+        } else {
+            let missingTools = try await runglov(["vm", "create", "--no-start", "w"], home: home)
+            #expect(missingTools.status != 0 && missingTools.err.contains("missing host tools for Windows VMs:") && missingTools.err.contains("brew install"), "\(missingTools.err)")
+        }
+        #expect(home.vmNames().isEmpty)
+    }
 }
