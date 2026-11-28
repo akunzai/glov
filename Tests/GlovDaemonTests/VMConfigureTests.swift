@@ -1,5 +1,6 @@
 import Foundation
 import GlovCore
+import Synchronization
 import Testing
 
 @testable import GlovDaemon
@@ -162,5 +163,95 @@ import Testing
         f.fake.dropConnection()
         await eventually { !FileManager.default.fileExists(atPath: marker) }
         #expect(ranResize.value == "yes")
+    }
+
+    @Test func windowsDNSScriptTargetsVirtIOOrUpAdaptersWithoutLocalizedNames() {
+        let setScript = VMConfigurator.windowsDNSScript(["1.1.1.1", "8.8.8.8"])
+        #expect(setScript.contains("InterfaceDescription -like '*VirtIO*'"))
+        #expect(setScript.contains("$_.Status -eq 'Up'"))
+        #expect(setScript.contains("Set-DnsClientServerAddress -InterfaceIndex $n.ifIndex -ServerAddresses @('1.1.1.1','8.8.8.8')"))
+        #expect(!setScript.contains("'Ethernet'"))
+
+        let resetScript = VMConfigurator.windowsDNSScript([])
+        #expect(resetScript.contains("Set-DnsClientServerAddress -InterfaceIndex $n.ifIndex -ResetServerAddresses"))
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func dispatcherSavesAndAppliesGuestDNSOnStoppedAndRunningWindowsVMs() async throws {
+        let home = GlovHome(path: try shortTempDir())
+        defer { try? FileManager.default.removeItem(atPath: home.path) }
+        let fw = home.path + "/code.fd"
+        FileManager.default.createFile(atPath: fw, contents: Data(count: 64))
+        try home.create(VMConfig(name: "win", directory: home.directory(of: "win"), engine: .qemu, firmwareCode: fw))
+        try home.create(VMConfig(name: "lin", directory: home.directory(of: "lin"), engine: .vz, firmwareCode: "", tpm: false))
+
+        let dispatcher = Dispatcher(home: home)
+        func callDNS(_ vm: String, _ servers: [String]) async throws -> RPCResponse {
+            await dispatcher.handle(.init(id: 1, method: Method.vmDNS, params: try JSONValue(encoding: Params.DNS(vm: vm, servers: servers))))
+        }
+
+        let vz = try await callDNS("lin", ["1.1.1.1"])
+        #expect(vz.error?.message.contains("QEMU (Windows)") == true)
+        let badIP = try await callDNS("win", ["example.com"])
+        #expect(badIP.error?.message.contains("invalid --dns address") == true)
+
+        let setResp = try await callDNS("win", ["1.1.1.1", "[2606:4700:4700:0:0:0:0:1111]"])
+        let setResult = try #require(try setResp.result?.decode(Results.DNS.self))
+        #expect(setResult == .init(vm: "win", servers: ["1.1.1.1", "2606:4700:4700::1111"], applied: false))
+        #expect(try home.loadConfig("win").dns == ["1.1.1.1", "2606:4700:4700::1111"])
+        #expect(!FileManager.default.fileExists(atPath: VMConfigurator.pendingDNSResetPath(home.directory(of: "win"))))
+
+        let resetResp = try await callDNS("win", [])
+        let resetResult = try #require(try resetResp.result?.decode(Results.DNS.self))
+        #expect(resetResult == .init(vm: "win", servers: [], applied: false))
+        #expect(try home.loadConfig("win").dns == nil)
+        #expect(FileManager.default.fileExists(atPath: VMConfigurator.pendingDNSResetPath(home.directory(of: "win"))))
+
+        let setAgain = try await callDNS("win", ["8.8.8.8"])
+        #expect(try setAgain.result?.decode(Results.DNS.self).servers == ["8.8.8.8"])
+        #expect(!FileManager.default.fileExists(atPath: VMConfigurator.pendingDNSResetPath(home.directory(of: "win"))))
+    }
+
+    @Test(.timeLimit(.minutes(1)))
+    func liveAndSessionGuestDNSSyncFollowsConfigWithoutOverwritingManualVMs() async throws {
+        let f = try await GuestServiceFixture()
+        defer { f.cleanup() }
+        let commands = Mutex<[String]>([])
+        f.fake.script = { argv in
+            if argv.first == "powershell.exe", let cmd = argv.last, cmd.contains("Set-DnsClientServerAddress") {
+                commands.withLock { $0.append(cmd) }
+            }
+            return [.exit(0)]
+        }
+
+        // Unconfigured VM (dns == nil, no reset marker) leaves guest DNS untouched across sessions.
+        f.fake.dropConnection()
+        _ = try await f.client.call(Method.vmWait, Params.Wait(vm: "win11", state: "guest-ready", timeout: 10), as: Results.VMInfo.self)
+        #expect(commands.withLock { $0.isEmpty })
+
+        // Live set updates immediately and persists for future sessions.
+        let setResult = try await f.client.call(Method.vmDNS, Params.DNS(vm: "win11", servers: ["1.1.1.1", "8.8.8.8"]), as: Results.DNS.self)
+        #expect(setResult == .init(vm: "win11", servers: ["1.1.1.1", "8.8.8.8"], applied: true))
+        #expect(commands.withLock { $0.last } == VMConfigurator.windowsDNSScript(["1.1.1.1", "8.8.8.8"]))
+
+        let countBeforeReconnect = commands.withLock { $0.count }
+        f.fake.dropConnection()
+        await eventually { commands.withLock { $0.count } > countBeforeReconnect }
+        #expect(commands.withLock { $0.last } == VMConfigurator.windowsDNSScript(["1.1.1.1", "8.8.8.8"]))
+
+        // Live reset restores DHCP and clears the reset marker.
+        let resetResult = try await f.client.call(Method.vmDNS, Params.DNS(vm: "win11", servers: []), as: Results.DNS.self)
+        #expect(resetResult == .init(vm: "win11", servers: [], applied: true))
+        #expect(commands.withLock { $0.last } == VMConfigurator.windowsDNSScript([]))
+        #expect(!FileManager.default.fileExists(atPath: VMConfigurator.pendingDNSResetPath(f.config.directory)))
+
+        // Pending reset marker when disconnected runs once on reconnect and is removed.
+        let marker = VMConfigurator.pendingDNSResetPath(f.config.directory)
+        FileManager.default.createFile(atPath: marker, contents: Data())
+        let countBeforeResetReconnect = commands.withLock { $0.count }
+        f.fake.dropConnection()
+        await eventually { !FileManager.default.fileExists(atPath: marker) }
+        #expect(commands.withLock { $0.count } == countBeforeResetReconnect + 1)
+        #expect(commands.withLock { $0.last } == VMConfigurator.windowsDNSScript([]))
     }
 }

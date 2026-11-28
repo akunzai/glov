@@ -600,6 +600,20 @@ git -C ~/src/proj fetch ~/tasks/t1/.git/result.bundle HEAD:refs/heads/t1
 
 Forwards are TCP and bind `127.0.0.1` only, so nothing is exposed beyond this Mac. They take effect on the next start.
 
+## Guest DNS on a QEMU VM
+
+QEMU's user-mode network (`slirp`) hands the guest `10.0.2.3` as its DHCP DNS server and forwards lookups to the Mac's resolver configuration. When the Mac is connected to a VPN, those forwarded queries can time out even while TCP connections to public addresses work.
+
+To bypass `10.0.2.3` and point the Windows guest's VirtIO network adapter directly at specific DNS servers (written to `vm.json` as `"dns"` and applied through the Guest Service, or during `setup.ps1` before downloading OpenSSH):
+
+```sh
+glov vm create win11 --dns 1.1.1.1,8.8.8.8      # set at creation (or repeatable: --dns 1.1.1.1 --dns 8.8.8.8)
+glov vm configure win11 --dns 1.1.1.1,8.8.8.8   # apply immediately if running and ready, else at next session
+glov vm configure win11 --dns auto              # reset the adapter back to DHCP (10.0.2.3)
+```
+
+`glov vm status <vm>` lists `dns:` while custom servers are configured. VMs whose `dns` was never set leave the guest's adapter settings untouched.
+
 ## SSH into a VZ guest
 
 `glov ssh <vm>` reaches a VZ guest over vsock, with or without a network device: it runs `/usr/bin/ssh` with

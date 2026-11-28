@@ -200,4 +200,27 @@ import Testing
         }
         #expect(home.vmNames().isEmpty)
     }
+
+    @Test(.timeLimit(.minutes(1))) func dnsOptionValidatesOnCreateAndConfigureAndSavesOnDiskVM() async throws {
+        let home = try makeHome()
+        defer { try? FileManager.default.removeItem(atPath: home.path) }
+        let ok = try await runglov(
+            ["vm", "create", "--no-start", "win11", "--firmware-code", home.path + "/code.fd", "--disk", "/d/disk.qcow2",
+             "--dns", "1.1.1.1,8.8.8.8", "--dns", "[2606:4700:4700::1111]"], home: home)
+        #expect(ok.status == 0, "\(ok.err)")
+        #expect(try home.loadConfig("win11").dns == ["1.1.1.1", "8.8.8.8", "2606:4700:4700::1111"])
+
+        let badCases: [([String], String)] = [
+            (["vm", "create", "--no-start", "w", "--engine", "vz", "--dns", "1.1.1.1"], "are for --engine qemu"),
+            (["vm", "create", "--no-start", "w", "--dns", "auto"], "--dns auto is for vm configure"),
+            (["vm", "create", "--no-start", "w", "--dns", "not-an-ip"], "invalid --dns address"),
+            (["vm", "configure", "win11", "--dns", "1.1.1.1", "--cpus", "4"], "pass --dns on its own"),
+            (["vm", "configure", "win11", "--dns", "auto,1.1.1.1"], "--dns auto cannot be combined"),
+            (["vm", "configure", "win11", "--dns", "bad-ip"], "invalid --dns address"),
+        ]
+        for (args, expected) in badCases {
+            let r = try await runglov(args, home: home)
+            #expect(r.status != 0 && r.err.contains(expected), "\(args): \(r.err)")
+        }
+    }
 }

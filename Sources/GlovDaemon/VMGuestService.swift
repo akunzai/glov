@@ -123,6 +123,8 @@ public actor VMGuestService {
     private var trust: (@Sendable () async -> [VMConfig.Egress.Trust]?)?
     private var trustSync: Task<String?, Never>?
     private var gitSync: Task<String?, Never>?
+    private var dnsSource: (@Sendable () async -> [String]?)?
+    private var dnsSync: Task<String?, Never>?
 
     /// The QEMU virtio-serial channel (`guestSocketPath`).
     public init(config: VMConfig, guestServiceDirectory: String = GuestServiceDistribution.directory) {
@@ -153,6 +155,7 @@ public actor VMGuestService {
     public func stop() async {
         mounting?.cancel()
         resizingPartition?.cancel()
+        dnsSync?.cancel()
         checking?.cancel()
         await channel.stop()
         pump?.cancel()
@@ -505,6 +508,50 @@ public actor VMGuestService {
 
     func setTrust(_ source: @escaping @Sendable () async -> [VMConfig.Egress.Trust]?) { trust = source }
 
+    func setDNS(_ source: @escaping @Sendable () async -> [String]?) { dnsSource = source }
+
+    /// Applies `vm.json`'s `dns` servers (or resets to DHCP once when `reset-dns` is present) on a Windows guest,
+    /// serialized in call order so an earlier edit never overwrites a newer one. Returns the problem, if any.
+    @discardableResult
+    func syncDNS() async -> String? {
+        let previous = dnsSync
+        let task = Task { () -> String? in
+            _ = await previous?.value
+            return await self.applyDNS()
+        }
+        dnsSync = task
+        return await task.value
+    }
+
+    private func applyDNS() async -> String? {
+        guard let info = await channel.info, info.os == "windows" else { return nil }
+        let servers = await dnsSource?() ?? []
+        let marker = VMConfigurator.pendingDNSResetPath(config.directory)
+        guard !servers.isEmpty || FileManager.default.fileExists(atPath: marker) else { return nil }
+        do {
+            let r = try await execRun(
+                .init(vm: config.name, argv: ["powershell.exe", "-NoProfile", "-Command", VMConfigurator.windowsDNSScript(servers)], timeout: 30),
+                maintenance: true)
+            guard r.exited, r.code == 0 else {
+                let verb = servers.isEmpty ? "reset" : "update"
+                let problem = "cannot \(verb) guest DNS: \(failure("Set-DnsClientServerAddress", r))"
+                DaemonLog.write("\(config.name): \(problem)")
+                return problem
+            }
+            if servers.isEmpty { try? FileManager.default.removeItem(atPath: marker) }
+            DaemonLog.write(
+                servers.isEmpty
+                    ? "\(config.name): DNS servers reset to DHCP"
+                    : "\(config.name): DNS servers set to \(servers.joined(separator: ", "))")
+            return nil
+        } catch {
+            let verb = servers.isEmpty ? "reset" : "update"
+            let problem = "cannot \(verb) guest DNS: \(error)"
+            DaemonLog.write("\(config.name): \(problem)")
+            return problem
+        }
+    }
+
     /// Makes the guest's `trustDirectory` hold exactly the VM's trusted certificates and rebuilds the system bundle when
     /// that changed. One at a time, in call order. Returns the problem, if any.
     @discardableResult
@@ -679,6 +726,9 @@ public actor VMGuestService {
             if config.engine == .qemu, config.install == nil, FileManager.default.fileExists(atPath: VMConfigurator.pendingPartitionResizePath(config.directory)) {
                 resizingPartition?.cancel()
                 if !isUpdating { resizingPartition = Task { await self.resizeWindowsSystemPartition() } }
+            }
+            if config.engine == .qemu, config.install == nil, dnsSource != nil {
+                Task { _ = await self.syncDNS() }
             }
             if config.engine == .vz, !config.shares.isEmpty {
                 mounting?.cancel()
